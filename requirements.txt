@@ -7,3 +7,7 @@ anthropic>=0.25.0
 apify-client>=1.7.0
 flask>=3.0.0
 playwright>=1.40.0   # for collector.carfax_agent (run dashboard locally; needs a real browser)
+
+# dev / tooling
+pytest>=8.0.0        # tests/ characterization suite: venv/bin/python -m pytest tests/ -q
+black>=24.0.0        # code formatter (also the .claude PostToolUse hook on edited .py)
