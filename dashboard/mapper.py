@@ -172,6 +172,18 @@ def _deep_recommended(vehicle: dict, scrutiny: dict, comps: dict) -> tuple[bool,
     return bool(reasons), ("; ".join(reasons[:2]) or None)
 
 
+def _append_dash_lights(notes, va: dict):
+    """Fold vision-detected dashboard warning lights into the condition text so the
+    declarations parser (check_engine/airbag) and the AI both see them — a second
+    source beyond the written remarks."""
+    lights = (va or {}).get("dash_warning_lights") or []
+    if not lights:
+        return notes
+    # phrase each as "<light> light on" so the declarations patterns latch reliably
+    clauses = "; ".join(f"{x} light on" for x in lights)
+    return ((notes or "") + " Dash warning: " + clauses + ".").strip()
+
+
 def _vision_to_design(va: dict) -> dict | None:
     if not va or va.get("error"):
         return None
@@ -188,6 +200,7 @@ def _vision_to_design(va: dict) -> dict | None:
         "rust": (va.get("rust_severity") or "unknown"),
         "hail": (va.get("hail_severity") or "none"),
         "flood": bool(va.get("flood_or_frame_concern")),
+        "dashLights": va.get("dash_warning_lights") or [],
         "damage": damage,
         "mods": mods,
         "conf": va.get("confidence") or "medium",
@@ -349,6 +362,7 @@ def evaluate(conn, contract: str, *, profile: str = "charles", ai_mode: str | No
         va = _get_subject_vision(conn, contract) or {}
     if va:
         _apply_vision_spec(vehicle, va)
+        vehicle["condition_notes"] = _append_dash_lights(vehicle.get("condition_notes"), va)
     if vehicle.get("vin") and vehicle.get("service_records") in (None, "none"):
         vehicle["service_records"] = "unknown"
 

@@ -55,7 +55,7 @@ REMARK_PATTERNS = [
     (r"\b(repaint|re-?paint(ed)?)\b",         "repaint"),
     (r"panel.*repaint|repaint.*panel",        "repaint"),
     (r"check\s*engine|\bcel\b|engine light",  "check_engine"),
-    (r"airbag light|\bsrs\b light|airbag.{0,15}\bon\b", "airbag_light"),
+    (r"\bairbag\b.{0,25}\b(light|on)\b|\bsrs\b.{0,15}\b(light|on)\b", "airbag_light"),
     (r"different colou?r|mismatched paint|repainted|different shade", "repaint"),
     (r"mechanical (problem|issue)",           "mechanical_unspecified"),
     (r"\bframe\b",                            "frame"),

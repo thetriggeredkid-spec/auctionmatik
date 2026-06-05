@@ -64,6 +64,7 @@ Respond in this exact JSON format:
     {"type": "e.g. 4in lift kit, aftermarket wheels, light bar, winch, exhaust", "quality": "professional|amateur|unknown"}
   ],
   "flood_or_frame_concern": true/false/null (water lines, mud in interior, bent frame, weld repairs),
+  "dash_warning_lights": ["only lights clearly ILLUMINATED in a dashboard/instrument-cluster photo, e.g. check engine, airbag/SRS, ABS, brake, oil, battery, TPMS, traction"],
   "repair_components": [
     {"component": "specific part needing work, e.g. front bumper, left headlight, left front fender, hood, grille, radiator, condenser, cooling fan, left front suspension, tie rod, control arm, alloy wheel, windshield, underbody cover", "action": "replace|repair|refinish", "severity": "minor|moderate|severe"}
   ],
@@ -71,6 +72,8 @@ Respond in this exact JSON format:
 }
 
 repair_components: ONLY for damaged vehicles — list EVERY part a buyer would have to replace or repair to make it sellable, including structural/mechanical parts visible behind the damage (suspension, rad, fans, hoses). For a clean car return []. Be thorough: a single impact often damages many adjacent parts.
+DASH WARNING LIGHTS: if any photo shows the instrument cluster with the ignition on, report EVERY illuminated warning light (check engine, airbag/SRS, ABS, brake, oil pressure, battery/charging, TPMS, traction/stability). These signal mechanical/electrical faults a buyer must diagnose. If there's no cluster photo or none are lit, return [].
+REPLACEMENT / UNPAINTED PANELS: a panel that is a DIFFERENT COLOUR from the body, in grey/black primer, or clearly a brand-new unpainted replacement is NOT damage — do NOT call it cracked or dented. Record it as a refinish job: a damage_details entry with damage_type "paint", and a repair_components entry with action "refinish" (it needs colour-matched paint + blend). This is a fix-and-flip cost, not collision damage.
 HAIL: inspect the horizontal panels (hood, roof, trunk/tailgate) closely for dimpling — many small round
 dents, often visible only in light reflections. Hail ranges from near-invisible to a real presentation hit;
 grade it in hail_severity. It's cosmetic (paintless dent repair), not structural.

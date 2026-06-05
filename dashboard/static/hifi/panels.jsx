@@ -252,6 +252,9 @@ function P_Vision({ v, onRun, runState }) {
             <span className="chip">rust · {vis.rust}</span>
             <span className="chip">hail · {vis.hail}</span>
             <span className={"chip " + (vis.flood ? "hi" : "")}>{vis.flood ? "⚠ flood / frame" : "frame · clear"}</span>
+            {(vis.dashLights || []).map((l, i) => (
+              <span key={i} className="chip hi" title="illuminated dashboard warning light">⚠ {l}</span>
+            ))}
           </div>
           <span className="eyebrow" style={{ fontSize: 11.5, marginTop: 4 }}>{vis.analyzed}/{vis.total} photos · {vis.model} · {vis.conf} conf</span>
         </div>
