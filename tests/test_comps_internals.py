@@ -93,6 +93,17 @@ def test_get_comp_pool_with_canned_rows():
     assert isinstance(res["comp_list"], list)
 
 
+def test_get_comp_pool_exclude_ids_prevents_self_comping():
+    rows = _rows(12)
+    target_id = rows[0]["id"]
+    res = comps.get_comp_pool(
+        {"year": 2019, "make": "FORD", "model": "F-150", "driveline": "4WD", "odometer_km": 110000},
+        conn=_FakeConn(rows), exclude_ids={target_id},
+    )
+    assert res["comp_count"] == 11  # the excluded subject is gone
+    assert all(c["id"] != target_id for c in res["comp_list"])
+
+
 def test_get_comp_pool_empty():
     res = comps.get_comp_pool(
         {"year": 2019, "make": "FORD", "model": "F-150", "driveline": "4WD", "odometer_km": 110000},

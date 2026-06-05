@@ -292,9 +292,12 @@ def _tier_stats(scored: list[dict]) -> dict:
     return {tier: stats(prices) for tier, prices in tiers.items()}
 
 
-def get_comp_pool(vehicle: dict, conn=None) -> dict:
+def get_comp_pool(vehicle: dict, conn=None, exclude_ids=None) -> dict:
     """
-    Main entry point. Returns:
+    Main entry point. `exclude_ids` (set of regal_sold.id) drops those rows from the
+    comp pool — used when calibrating against a sold record so it can't comp itself.
+
+    Returns:
     {
         base_median:         int (CAD cents) — weighted median of CLEAN comps (primary anchor)
         base_median_all:     int — weighted median of ALL comps (for reference)
@@ -313,12 +316,17 @@ def get_comp_pool(vehicle: dict, conn=None) -> dict:
         conn = get_conn()
     cursor = get_cursor(conn)
 
+    exclude = {str(i) for i in (exclude_ids or set())}
+
+    def _drop_excluded(rows):
+        return [r for r in rows if str(r.get("id")) not in exclude] if exclude else rows
+
     try:
-        raw = _fetch_comps_primary(cursor, vehicle)
+        raw = _drop_excluded(_fetch_comps_primary(cursor, vehicle))
         fallback_used = False
 
         if len(raw) < MIN_COMP_COUNT:
-            raw_fb = _fetch_comps_model_only(cursor, vehicle)
+            raw_fb = _drop_excluded(_fetch_comps_model_only(cursor, vehicle))
             if len(raw_fb) >= len(raw):
                 raw = raw_fb
                 fallback_used = True

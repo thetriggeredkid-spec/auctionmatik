@@ -682,11 +682,15 @@ def calibration(conn) -> dict:
         b_err = round((emb - truth_b) / truth_b * 100, 1) if (emb is not None and truth_b) else None
         if v_err is not None:
             val_errs.append(v_err)
-            mk = (r.get("make") or "—").upper()
-            by_make.setdefault(mk, []).append(v_err)
-            by_band.setdefault(_band(truth_v), []).append(v_err)
         if b_err is not None:
             bid_errs.append(b_err)
+        # Segment by make / price band using whichever error the row has — value
+        # error for human retail corrections, bid-vs-actual for auto-imported outcomes.
+        seg_err = v_err if v_err is not None else b_err
+        seg_truth = truth_v if truth_v else truth_b
+        if seg_err is not None:
+            by_make.setdefault((r.get("make") or "—").upper(), []).append(seg_err)
+            by_band.setdefault(_band(seg_truth), []).append(seg_err)
         if r.get("verdict_correct") is not None:
             vc_total += 1
             vc_right += 1 if r["verdict_correct"] else 0

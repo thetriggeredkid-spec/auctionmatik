@@ -48,9 +48,12 @@ def _near_total_loss_ceiling_compress(result: dict) -> dict:
     return result
 
 
-def valuate(vehicle: dict, conn=None, log_to_db: bool = False) -> dict:
+def valuate(vehicle: dict, conn=None, log_to_db: bool = False, exclude_ids=None) -> dict:
     """
     Main valuation function.
+
+    `exclude_ids` (regal_sold ids) are dropped from the wholesale comp pool — used when
+    calibrating against a sold record so it can't comp itself.
 
     Returns a structured result dict with:
         base_median, adjusted_estimate, retail_{low,mid,high},
@@ -63,7 +66,7 @@ def valuate(vehicle: dict, conn=None, log_to_db: bool = False) -> dict:
     # FALLBACK: Regal sold comps (wholesale auction data) — used only when retail data
     # is sparse. If falling back, we treat Regal median as wholesale and back-calculate retail.
     retail_pool = get_retail_comp_pool(vehicle, conn=conn)
-    wholesale_pool = get_comp_pool(vehicle, conn=conn)
+    wholesale_pool = get_comp_pool(vehicle, conn=conn, exclude_ids=exclude_ids)
 
     using_retail_primary = retail_pool.get("has_data") and retail_pool.get("retail_median")
 
