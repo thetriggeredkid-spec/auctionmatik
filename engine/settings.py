@@ -55,6 +55,7 @@ def _read_engine_defaults() -> dict:
         "engine": {
             "deep_autopull_carfax": True,
             "deep_autorun_vision": True,
+            "deep_autocollect_comps": True,
             "vision_photo_cap": 30,
             "prep_default_limit": 25,
         },

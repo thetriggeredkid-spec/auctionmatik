@@ -342,7 +342,7 @@ def appraise(subject, *, comp_narrative, comp_anchor_cents, comp_confidence,
     Run the AI appraiser over assembled evidence.
       mode="triage": fast/cheap screen — medium effort, lean output, brief rationale, no tools.
       mode="deep":   full appraisal — high effort, full narration. If tool_ctx is given, the model
-                     can call escalation tools (carfax, more comps, repair re-quote) on demand.
+                     can call escalation tools (carfax, repair re-quote) on demand.
     """
     import anthropic
 
@@ -408,21 +408,10 @@ def _build_tools(ctx: dict):
                            "single-hit-vs-many-small distinction would change the price.",
             "input_schema": {"type": "object", "properties": {}},
         },
-        {
-            "name": "fetch_more_comps",
-            "description": "SLOW + COSTS MONEY (live Marketplace scrape ~2 min). Pull additional retail comps "
-                           "for this generation when the comp pool is thin or low-confidence and a better "
-                           "anchor would change the verdict. Use sparingly — only when it actually matters.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "min_year": {"type": "integer"},
-                    "max_year": {"type": "integer"},
-                    "min_price": {"type": "integer", "description": "floor price to target the right generation"},
-                },
-                "required": ["min_year", "max_year"],
-            },
-        },
+        # NOTE: the live-comp-scrape tool was intentionally removed. Comps are collected
+        # ONCE before the appraisal (dashboard/mapper._maybe_autocollect_comps) so the AI
+        # reasons over a FIXED comp set — this keeps deep results stable run-to-run and
+        # ensures the scraped comps show in the Comps tab.
     ]
 
     def execute(name: str, args: dict) -> str:
@@ -447,27 +436,6 @@ def _build_tools(ctx: dict):
                 return json.dumps(rpt) if rpt else ("No stored Carfax report. Run the local Carfax agent "
                                                     "(collector.carfax_agent) to populate it; proceed with the "
                                                     "claims-total band for now.")
-            if name == "fetch_more_comps":
-                from collector.retail_comps import collect_facebook
-                from engine.comp_scrutiny import scrutinize
-                from db.connection import get_cursor
-                s = ctx["subject"]
-                collect_facebook("edmonton", f"{s.get('make')} {s.get('model')}", max_listings=20,
-                                 min_year=args.get("min_year"), max_year=args.get("max_year"),
-                                 min_price=args.get("min_price"))
-                cur = get_cursor(ctx["conn"])
-                cur.execute("""SELECT year,make,model,trim,odometer_km,asking_price,posted_at,title,description
-                               FROM retail_listings WHERE source='facebook_marketplace'
-                               AND UPPER(make)=%s AND UPPER(COALESCE(model,'')) LIKE %s
-                               AND year BETWEEN %s AND %s AND odometer_km IS NOT NULL AND asking_price>=300000
-                               ORDER BY collected_at DESC LIMIT 15""",
-                            ((s.get('make') or '').upper(), (s.get('model') or '').upper().split()[0] + '%',
-                             args.get("min_year"), args.get("max_year")))
-                comps = [dict(r) for r in cur.fetchall()]; cur.close()
-                res = scrutinize(s, comps)
-                lines = "\n".join(res["narrative"][:8])
-                return (f"Fetched fresh comps. New reasoned anchor ${ (res['anchor'] or 0)/100:,.0f} "
-                        f"(confidence {res['confidence']}).\n{lines}")
         except Exception as e:
             return f"tool error: {e}"
         return f"unknown tool: {name}"
@@ -476,7 +444,6 @@ def _build_tools(ctx: dict):
 
 
 _TOOL_LABELS = {"get_carfax_report": "AI: checking Carfax",
-                "fetch_more_comps": "AI: fetching more comps",
                 "refine_repair_quote": "AI: re-quoting repairs"}
 
 

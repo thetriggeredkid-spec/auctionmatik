@@ -329,7 +329,8 @@ def _meta(ai: dict, elapsed: float, effort: str) -> dict:
 # ── main entry ────────────────────────────────────────────────────────────────
 
 def evaluate(conn, contract: str, *, profile: str = "charles", ai_mode: str | None = None,
-             progress=None, use_deep_cache: bool = True, store_deep: bool = True) -> dict | None:
+             progress=None, use_deep_cache: bool = True, store_deep: bool = True,
+             collect_comps=None) -> dict | None:
     """Run the engine for one contract and return a design-shaped vehicle dict (or None).
     `progress(stage)` is called at each step (used by the streaming endpoint).
     For ai_mode='deep': serve a fresh cached result if one exists (use_deep_cache), and
@@ -364,6 +365,12 @@ def evaluate(conn, contract: str, *, profile: str = "charles", ai_mode: str | No
             if cached:
                 _p("Loaded overnight deep result")
                 return cached
+
+    # Deep, on a genuine (cache-miss) run: collect retail comps once if we have none, so
+    # the Comps tab populates from the deep result and the AI reasons over a fixed set.
+    if ai_mode == "deep":
+        _p("Searching live comps")
+        _maybe_autocollect_comps(conn, vehicle, ai_mode, collect_comps)
 
     _p("Screening comps & history")
     try:
@@ -538,30 +545,74 @@ def deep_cached_contracts(conn, contracts: list, profile: str) -> set:
     return out
 
 
-def fetch_comps(conn, contract: str, *, profile: str = "charles", location: str = "edmonton") -> dict | None:
-    """On-demand: scrape Facebook Marketplace for this vehicle's make/model, upsert the
-    comps, then re-evaluate so the Comps tab populates. Slow (live Apify scrape)."""
-    raw = fetch_listing_from_db(contract, conn)
-    if not raw:
-        return None
-    vehicle = parse_listing_to_vehicle(raw)
+def _scrape_retail_comps(vehicle: dict, location: str = "edmonton") -> int:
+    """Trim-targeted Facebook Marketplace scrape for this vehicle → retail_listings.
+    Returns the number upserted. Raises if make/model unknown or APIFY_TOKEN missing."""
     make = (vehicle.get("make") or "").strip()
     model = (vehicle.get("model") or "").strip()
     year = vehicle.get("year")
     if not (make and model):
         raise RuntimeError("vehicle make/model unknown — can't search for comps")
-
     from collector.retail_comps import collect_facebook
     # model can be "MAZDA3" with make "MAZDA" — avoid a redundant doubled query
     query = model if make.upper() in model.upper() else f"{make} {model}"
     trim = (vehicle.get("trim") or "").strip()
     if trim:                       # target the right trim (a Lariat needs Lariat comps, not XLT)
         query = f"{query} {trim}"
-    added = collect_facebook(location, query, max_listings=20,
-                             min_year=(year - 3 if year else None),
-                             max_year=(year + 3 if year else None))
+    return collect_facebook(location, query, max_listings=20,
+                            min_year=(year - 3 if year else None),
+                            max_year=(year + 3 if year else None))
 
-    # drop any cached deterministic result so the re-eval picks up the new comps
+
+def _retail_comp_count(conn, vehicle: dict) -> int:
+    """How many usable (non-flagged) retail comps we already have for this vehicle."""
+    yr = vehicle.get("year")
+    make = (vehicle.get("make") or "").upper()
+    model = (vehicle.get("model") or "").upper()
+    if not (yr and make and model):
+        return 0
+    cur = get_cursor(conn)
+    cur.execute("""SELECT count(*) n FROM retail_listings
+                   WHERE UPPER(make) = %s AND UPPER(COALESCE(model,'')) LIKE %s
+                     AND year BETWEEN %s AND %s AND asking_price >= 300000 AND is_sold = FALSE
+                     AND external_id NOT IN (SELECT external_id FROM comp_feedback WHERE status='bad')""",
+                (make, model.split()[0] + "%", yr - 2, yr + 2))
+    n = cur.fetchone()["n"]
+    cur.close()
+    return n
+
+
+def _maybe_autocollect_comps(conn, vehicle: dict, ai_mode: str | None, collect_comps) -> bool:
+    """Deep only: if we don't already have retail comps, scrape them ONCE before the
+    anchor is built — so the Comps tab populates from the deep run and the AI reasons
+    over a fixed comp set (no mid-run scraping). Gated by the deep_autocollect_comps
+    setting; `collect_comps` (True/False) overrides it for the batch."""
+    if ai_mode != "deep":
+        return False
+    from engine import settings as _st
+    allow = collect_comps if collect_comps is not None else _st.engine_flag("deep_autocollect_comps", True)
+    if not allow:
+        return False
+    if _retail_comp_count(conn, vehicle) >= 3:
+        return False   # already have comps — don't re-scrape (cost) and don't churn the anchor
+    try:
+        _scrape_retail_comps(vehicle)
+        return True
+    except Exception as e:  # noqa: BLE001 — no token / make unknown / network: continue without comps
+        print(f"[deep autocollect comps] {vehicle.get('contract')}: {e}")
+        return False
+
+
+def fetch_comps(conn, contract: str, *, profile: str = "charles", location: str = "edmonton") -> dict | None:
+    """On-demand (triage 'Scan for comps'): scrape FB for this vehicle, then re-evaluate
+    so the Comps tab populates. Slow (live Apify scrape)."""
+    raw = fetch_listing_from_db(contract, conn)
+    if not raw:
+        return None
+    vehicle = parse_listing_to_vehicle(raw)
+    added = _scrape_retail_comps(vehicle, location)
+
+    # drop any cached result so the re-eval picks up the new comps
     for key in [k for k in _DET_CACHE if k[0] == str(contract)]:
         _DET_CACHE.pop(key, None)
     drop_deep_cache(conn, contract)

@@ -92,9 +92,10 @@ def screen_sale(date_str, *, profile="charles", limit=300, all_deep=False, comps
             continue
 
         try:
+            # comps auto-collected inside the deep run only when --comps is set (else skipped to save $)
             if all_deep:
                 v = mapper.evaluate(conn, c, profile=profile, ai_mode="deep",
-                                    use_deep_cache=False, store_deep=True)
+                                    use_deep_cache=False, store_deep=True, collect_comps=comps)
                 deepened += 1
                 cost += _est_cost(v)
                 _log(f"{tag} DEEP → {v.get('verdict')} ${v.get('maxBid'):,}")
@@ -106,13 +107,8 @@ def screen_sale(date_str, *, profile="charles", limit=300, all_deep=False, comps
                 cost += _est_cost(t)
                 worth = (t.get("verdict") in DEEP_VERDICTS) or t.get("needsDeep")
                 if worth and (max_deep is None or deepened < max_deep):
-                    if comps and (not t.get("comps") or t["comps"].get("empty")):
-                        try:
-                            mapper.fetch_comps(conn, c, profile=profile)
-                        except Exception as e:  # noqa: BLE001
-                            _log(f"{tag} comps scrape failed: {e}")
                     v = mapper.evaluate(conn, c, profile=profile, ai_mode="deep",
-                                        use_deep_cache=False, store_deep=True)
+                                        use_deep_cache=False, store_deep=True, collect_comps=comps)
                     deepened += 1
                     cost += _est_cost(v)
                     _log(f"{tag} {t.get('verdict')} → DEEP → {v.get('verdict')} ${v.get('maxBid'):,}")
