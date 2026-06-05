@@ -1,0 +1,247 @@
+/* ============================================================
+   AUCTIONMATIC — hi-fi design system
+   "Industrial instrument" · themeable (light / dark) · calm.
+   Type: Hanken Grotesk (display+prose) · Spline Sans Mono (data)
+   ============================================================ */
+
+/* ---------------- theme tokens ---------------- */
+:root {
+  --accent-h: 222;            /* instrument blue — tweakable */
+  --accent:        oklch(0.58 0.16 var(--accent-h));
+  --accent-soft:   oklch(0.58 0.16 var(--accent-h) / 0.12);
+  --accent-text:   oklch(0.62 0.17 var(--accent-h));
+
+  /* verdict hues (shared across themes; tints resolved per theme) */
+  --bid-h: 152; --fix-h: 70; --pass-h: 18; --cond-h: 255;
+
+  /* verdict FILLS — deep enough for white text in either theme */
+  --bid-fill:  oklch(0.52 0.12 152);
+  --fix-fill:  oklch(0.53 0.105 66);
+  --pass-fill: oklch(0.53 0.16 20);
+  --cond-fill: oklch(0.52 0.13 255);
+  --on-fill:   oklch(0.99 0.01 250);
+
+  --r-sm: 7px; --r: 11px; --r-lg: 16px; --r-xl: 22px;
+  --maxw: 980px;
+  --ease: cubic-bezier(.4, 0, .2, 1);
+}
+
+/* DARK (default) — cockpit */
+[data-theme="dark"] {
+  --bg:        oklch(0.17 0.012 250);
+  --bg-grad:   oklch(0.20 0.016 250);
+  --surface:   oklch(0.215 0.014 250);
+  --surface-2: oklch(0.255 0.016 250);
+  --surface-3: oklch(0.30 0.018 250);
+  --border:    oklch(0.34 0.016 250);
+  --border-strong: oklch(0.44 0.02 250);
+  --text:      oklch(0.95 0.006 250);
+  --text-dim:  oklch(0.74 0.012 250);
+  --text-faint:oklch(0.56 0.014 250);
+
+  --bid:  oklch(0.74 0.15 var(--bid-h));
+  --bid-tint: oklch(0.74 0.15 var(--bid-h) / 0.15);
+  --fix:  oklch(0.80 0.14 var(--fix-h));
+  --fix-tint: oklch(0.80 0.14 var(--fix-h) / 0.15);
+  --pass: oklch(0.72 0.16 var(--pass-h));
+  --pass-tint: oklch(0.72 0.16 var(--pass-h) / 0.15);
+  --cond: oklch(0.74 0.13 var(--cond-h));
+  --cond-tint: oklch(0.74 0.13 var(--cond-h) / 0.15);
+
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 28px -8px rgba(0,0,0,.55);
+  --shadow-lg: 0 2px 4px rgba(0,0,0,.4), 0 24px 60px -16px rgba(0,0,0,.7);
+  --hairline: rgba(255,255,255,.06);
+  --grain-op: 0.035;
+}
+
+/* LIGHT — bright lab */
+[data-theme="light"] {
+  --bg:        oklch(0.965 0.004 250);
+  --bg-grad:   oklch(0.99 0.003 250);
+  --surface:   oklch(1 0 0);
+  --surface-2: oklch(0.975 0.004 250);
+  --surface-3: oklch(0.95 0.006 250);
+  --border:    oklch(0.91 0.006 250);
+  --border-strong: oklch(0.84 0.01 250);
+  --text:      oklch(0.22 0.015 250);
+  --text-dim:  oklch(0.46 0.014 250);
+  --text-faint:oklch(0.62 0.012 250);
+
+  --bid:  oklch(0.54 0.15 var(--bid-h));
+  --bid-tint: oklch(0.54 0.15 var(--bid-h) / 0.10);
+  --fix:  oklch(0.60 0.14 var(--fix-h));
+  --fix-tint: oklch(0.66 0.13 var(--fix-h) / 0.13);
+  --pass: oklch(0.55 0.18 var(--pass-h));
+  --pass-tint: oklch(0.55 0.18 var(--pass-h) / 0.09);
+  --cond: oklch(0.52 0.16 var(--cond-h));
+  --cond-tint: oklch(0.52 0.16 var(--cond-h) / 0.09);
+
+  --shadow: 0 1px 2px rgba(20,24,30,.05), 0 6px 20px -8px rgba(20,24,30,.12);
+  --shadow-lg: 0 2px 6px rgba(20,24,30,.06), 0 20px 50px -16px rgba(20,24,30,.18);
+  --hairline: rgba(20,24,30,.05);
+  --grain-op: 0.02;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hanken Grotesk", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+body {
+  background:
+    radial-gradient(120% 80% at 50% -10%, var(--bg-grad), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  min-height: 100vh;
+  transition: background .4s var(--ease);
+}
+
+/* grain overlay for depth */
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  opacity: var(--grain-op);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------------- type utilities ---------------- */
+.mono { font-family: "Spline Sans Mono", ui-monospace, monospace; font-feature-settings: "tnum" 1; }
+.num  { font-family: "Spline Sans Mono", ui-monospace, monospace; font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
+.eyebrow {
+  font-family: "Spline Sans Mono", monospace;
+  font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 500; white-space: nowrap;
+}
+.display { font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
+.dim { color: var(--text-dim); }
+.faint { color: var(--text-faint); }
+
+h1,h2,h3 { margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+
+/* ---------------- surfaces ---------------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+}
+.card-2 { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); }
+.inset {
+  background: color-mix(in oklch, var(--surface-2), transparent 0%);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r);
+}
+
+/* ---------------- layout ---------------- */
+.shell { max-width: var(--maxw); margin: 0 auto; padding: 0 28px 120px; }
+.row { display: flex; align-items: center; gap: 12px; }
+.col { display: flex; flex-direction: column; }
+.wrap { flex-wrap: wrap; }
+.between { justify-content: space-between; }
+.grow { flex: 1; }
+.gap6{gap:6px}.gap8{gap:8px}.gap16{gap:16px}.gap24{gap:24px}.gap32{gap:32px}
+.stack > * + * { margin-top: 14px; }
+
+/* ---------------- buttons / controls ---------------- */
+.btn {
+  font-family: "Hanken Grotesk", sans-serif; font-size: 13.5px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  padding: 8px 14px; cursor: pointer; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); transition: all .15s var(--ease);
+}
+.btn:hover { background: var(--surface-3); border-color: var(--border-strong); }
+.btn:active { transform: translateY(1px); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn.ghost:hover { background: var(--surface-2); color: var(--text); }
+.btn.accent { background: var(--accent); border-color: var(--accent); color: white; }
+.btn.sm { font-size: 12px; padding: 6px 11px; }
+.icon-btn {
+  width: 34px; height: 34px; display: grid; place-items: center; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text-dim); transition: all .15s var(--ease);
+}
+.icon-btn:hover { color: var(--text); border-color: var(--border-strong); }
+
+.seg {
+  display: inline-flex; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 3px; gap: 2px;
+}
+.seg button {
+  font-family: "Spline Sans Mono", monospace; font-size: 11.5px; font-weight: 500;
+  border: none; background: transparent; padding: 5px 12px; cursor: pointer;
+  color: var(--text-dim); border-radius: 5px; transition: all .15s var(--ease);
+  text-transform: lowercase; letter-spacing: .02em; white-space: nowrap;
+}
+.seg button:hover { color: var(--text); }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+/* chips */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: "Spline Sans Mono", monospace; font-size: 11px; font-weight: 500;
+  padding: 3px 9px; border-radius: 100px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
+}
+.chip.hi  { background: var(--pass-tint); border-color: transparent; color: var(--pass); }
+.chip.med { background: var(--fix-tint); border-color: transparent; color: var(--fix); }
+.chip.sev-severe { background: var(--pass-tint); color: var(--pass); border-color: transparent; }
+.chip.sev-moderate { background: var(--fix-tint); color: var(--fix); border-color: transparent; }
+
+/* ---------------- tables ---------------- */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th {
+  text-align: left; font-family: "Spline Sans Mono", monospace; font-size: 10px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-faint);
+  font-weight: 500; padding: 0 12px 10px; white-space: nowrap;
+}
+.tbl td { padding: 11px 12px; border-top: 1px solid var(--hairline); font-size: 13.5px; vertical-align: middle; }
+.tbl tr:first-child td { border-top: none; }
+.tbl .num { font-size: 13px; }
+
+/* eyebrow section label */
+.section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+.section-head h3 { font-size: 16px; white-space: nowrap; }
+
+/* placeholder media */
+.media {
+  position: relative; border-radius: var(--r); overflow: hidden;
+  background:
+    repeating-linear-gradient(135deg, var(--surface-2) 0 10px, var(--surface-3) 10px 20px);
+  border: 1px solid var(--border);
+  display: grid; place-items: center;
+}
+.media span {
+  font-family: "Spline Sans Mono", monospace; font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--text-faint);
+  background: var(--surface); padding: 3px 8px; border-radius: 100px; border: 1px solid var(--border);
+}
+
+/* divider */
+.hr { height: 1px; background: var(--border); border: none; margin: 0; }
+
+/* entrance — base state is ALWAYS visible (opacity untouched); only the
+   harmless transform animates, so content can never get stuck hidden if the
+   animation goes play-pending in a given environment. */
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise .5s var(--ease); }
+  @keyframes rise { from { transform: translateY(10px); } to { transform: none; } }
+  .rise-1{animation-delay:.04s}.rise-2{animation-delay:.09s}.rise-3{animation-delay:.14s}
+  .rise-4{animation-delay:.19s}.rise-5{animation-delay:.24s}
+}
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; border: 3px solid var(--bg); }
+::selection { background: var(--accent-soft); }
+
+/* lane rows */
+.lane-row { transition: background .12s var(--ease); }
+.lane-row:hover { background: var(--surface-2); }
+.lane-row:hover .lane-go { color: var(--accent-text); transform: translateX(2px); }
+.lane-go { transition: all .12s var(--ease); display: inline-block; }
