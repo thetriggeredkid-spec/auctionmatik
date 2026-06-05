@@ -115,30 +115,45 @@ function Stat({ label, value, onFill, accent }) {
 }
 window.Stat = Stat;
 
-/* ---- max-bid derivation waterfall ---- */
+/* ---- max-bid derivation waterfall ----
+   Margin, auction fee and GST are shown as SEPARATE bars (fee + GST are exact,
+   passed from the engine as v.buyerFee / v.gst). Whatever's left between value and
+   max bid after margin/fee/GST is the reconditioning & reserve — labelled as such,
+   not lumped into "fees". */
 function computeWaterfall(v) {
   const anchor = (v.comps && v.comps.anchor) || v.value;
+  const fee = v.buyerFee || 0;
+  const gst = v.gst || 0;
   const steps = [];
   steps.push({ label: v.repair ? "After-fix retail" : "Market anchor", val: anchor, type: "base" });
+
+  // value (as-is or after-fix) relative to the anchor = condition/claims/history
   const cond = v.value - anchor;
-  if (!v.repair && Math.abs(cond) >= 50) {
+  if (Math.abs(cond) >= 50) {
     steps.push({ label: cond < 0 ? "Claims & condition" : "Upside", delta: cond, type: cond < 0 ? "sub" : "add" });
   }
-  let running = anchor + (!v.repair ? cond : 0);
-  if (v.repair) {
-    const rmid = Math.round((v.repair.sourcing.used_diy.low + v.repair.sourcing.used_diy.high) / 2);
-    steps.push({ label: "Repair (DIY / used)", delta: -rmid, type: "sub" });
-    running -= rmid;
-    const plug = running - v.maxBid;
-    if (Math.abs(plug) >= 1) steps.push({ label: "Margin, fees & GST", delta: -plug, type: "sub" });
-  } else if (v.verdict === "PASS") {
-    // Costs exceed value → no viable bid. Show one honest reduction to $0 instead of a
-    // confusing positive "haircut" plug (margin/fees would drive it negative).
-    if (running > 0) steps.push({ label: "Below viable bid → PASS", delta: -running, type: "sub" });
+  let running = v.value;
+
+  if (v.verdict === "PASS") {
+    // Costs exceed value → no viable bid. One honest reduction to the (often $0) ceiling.
+    if (Math.abs(running - v.maxBid) >= 1) {
+      steps.push({ label: "Below viable bid → PASS", delta: -(running - v.maxBid), type: "sub" });
+    }
   } else {
+    if (v.repair) {
+      const rmid = Math.round((v.repair.sourcing.used_diy.low + v.repair.sourcing.used_diy.high) / 2);
+      steps.push({ label: "Repair (DIY / used)", delta: -rmid, type: "sub" });
+      running -= rmid;
+    }
+    // Reconditioning & reserve = the remainder once margin + fee + GST are taken out.
+    const recon = Math.round(running - v.margin - fee - gst - v.maxBid);
+    if (recon >= 1) { steps.push({ label: "Recon & reserve", delta: -recon, type: "sub" }); running -= recon; }
     if (v.margin > 0) { steps.push({ label: "Your margin", delta: -v.margin, type: "sub" }); running -= v.margin; }
-    const plug = running - v.maxBid;
-    if (Math.abs(plug) >= 1) steps.push({ label: "Auction fees & GST", delta: -plug, type: "sub" });
+    if (fee > 0) { steps.push({ label: "Auction fee", delta: -fee, type: "sub" }); running -= fee; }
+    if (gst > 0) { steps.push({ label: "GST (5%)", delta: -gst, type: "sub" }); running -= gst; }
+    // any tiny leftover (rounding, or an AI max bid that doesn't perfectly reconcile)
+    const resid = Math.round(running - v.maxBid);
+    if (Math.abs(resid) >= 5) steps.push({ label: "Other", delta: -resid, type: resid < 0 ? "add" : "sub" });
   }
   steps.push({ label: "Max bid", val: v.maxBid, type: "total" });
   return steps;

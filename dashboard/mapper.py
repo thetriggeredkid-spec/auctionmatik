@@ -139,6 +139,15 @@ def _topflags(decl: dict) -> list:
     return [c["label"] for c in decl.get("codes", [])][:4]
 
 
+def _fee_gst(max_bid_dollars: int) -> tuple[int, int]:
+    """Regal buyer fee + 5% GST for a given max bid (the same basis the engine uses).
+    Read live from engine.max_bid so edited Settings are honoured."""
+    from engine.max_bid import get_buyer_fee, GST_RATE
+    fee = get_buyer_fee(max_bid_dollars or 0)
+    gst = round(((max_bid_dollars or 0) + fee) * GST_RATE)
+    return int(fee), int(gst)
+
+
 # Higher trims under/over-fit badly against generic comps — worth a deep run.
 _PREMIUM_TRIMS = ("lariat", "limited", "platinum", "king ranch", "high country", "denali",
                   "laramie", "summit", "calligraphy", "titanium", "rubicon", "overland",
@@ -1027,6 +1036,8 @@ def _to_design(contract, vehicle, raw, sold_pool, decl, va, scrutiny, anchor, so
         top_flags = _topflags(decl)
 
     margin = _margin(ADV_PROFILES[profile], value)
+    buyer_fee, gst = _fee_gst(max_bid)   # exact, settings-aware — so the waterfall can
+    # show auction fee + GST as their own bars instead of one lumped "fees" step.
     rules = {
         "charles": {"verdict": _norm_verdict(ch["verdict"]), "maxBid": round(ch["max_bid_cents"] / 100),
                     "margin": _margin(ADV_PROFILES["charles"], ch["expected_sale_cents"] / 100), "fee": 0},
@@ -1083,7 +1094,7 @@ def _to_design(contract, vehicle, raw, sold_pool, decl, va, scrutiny, anchor, so
         "needsDeep": needs_deep, "deepReason": deep_reason,
 
         "verdict": verdict, "value": value, "maxBid": max_bid, "conf": conf,
-        "valueBasis": value_basis, "margin": margin,
+        "valueBasis": value_basis, "margin": margin, "buyerFee": buyer_fee, "gst": gst,
         "summary": summary, "topFlags": top_flags, "conditional": conditional,
         "reasoning": reasoning, "adjustments": adjustments,
         "toolsUsed": tools_used, "rules": rules, "divergence": divergence,

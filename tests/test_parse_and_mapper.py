@@ -45,6 +45,15 @@ def test_band():
     assert M._band(None) == "—"
 
 
+def test_fee_gst_separated_from_margin():
+    # buyer fee by band + 5% GST on (bid + fee) — the pieces the waterfall now shows separately
+    fee, gst = M._fee_gst(6900)
+    assert fee == 385                       # $5k–10k band
+    assert gst == round((6900 + 385) * 0.05)  # 364
+    fee0, gst0 = M._fee_gst(0)
+    assert fee0 == 285 and gst0 == round(285 * 0.05)
+
+
 def test_photo_fields_upscales_cover():
     pf = M._photo_fields({"main_photo_url": "https://x/160x120/a.jpg"})
     assert pf["photos"] == ["https://x/800x600w/a.jpg"]
