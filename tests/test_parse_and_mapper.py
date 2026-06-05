@@ -45,6 +45,17 @@ def test_band():
     assert M._band(None) == "—"
 
 
+def test_inputs_hash_stable_and_input_sensitive():
+    veh = {"declarations": "FR;HD", "odometer_km": 110000, "trim": "XLT",
+           "cab": "Crew Cab", "bed": None, "driveline": "4WD", "engine": "2.7L"}
+    h1 = M._inputs_hash(None, "123", "charles", veh, {})
+    h2 = M._inputs_hash(None, "123", "charles", dict(veh), {})
+    assert h1 == h2                                   # stable for identical inputs (no DB/volatile fields)
+    assert M._inputs_hash(None, "123", "mechanic", veh, {}) != h1      # profile matters
+    assert M._inputs_hash(None, "123", "charles", dict(veh, odometer_km=160000), {}) != h1  # km matters
+    assert M._inputs_hash(None, "123", "charles", veh, {"trim": "LARIAT"}) != h1  # overrides matter
+
+
 def test_fee_gst_separated_from_margin():
     # buyer fee by band + 5% GST on (bid + fee) — the pieces the waterfall now shows separately
     fee, gst = M._fee_gst(6900)

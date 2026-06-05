@@ -467,23 +467,22 @@ def evaluate(conn, contract: str, *, profile: str = "charles", ai_mode: str | No
 # ── persisted deep cache (overnight batch → instant morning opens) ────────────
 
 def _inputs_hash(conn, contract: str, profile: str, vehicle: dict, overrides: dict) -> str:
-    """Fingerprint the inputs a deep result depends on; changes invalidate the cache."""
+    """Fingerprint the inputs a deep result depends on so revisits hit the cache.
+
+    Deliberately STABLE across visits: only the profile + operator overrides + the
+    spec/declarations/km. We do NOT include carfax/vision presence or the settings
+    timestamp here — those would flip between the first run (which auto-pulls carfax
+    after this hash is computed) and later visits, causing spurious re-runs. Freshness
+    for those is handled explicitly: save_overrides / save_carfax / run_vision /
+    flag_comp / a settings change all drop the affected deep_cache rows.
+    """
     import hashlib
-    cur = get_cursor(conn)
-    cur.execute("SELECT (carfax_report IS NOT NULL) cf, (vision_assessment IS NOT NULL) vis "
-                "FROM regal_listings WHERE contract=%s ORDER BY last_updated_at DESC LIMIT 1", (str(contract),))
-    row = cur.fetchone() or {}
-    cur.execute("SELECT updated_at FROM app_settings WHERE id=1")
-    srow = cur.fetchone()
-    cur.close()
     sig = {
         "profile": profile,
         "ov": overrides or {},
         "decl": vehicle.get("declarations"),
         "km": vehicle.get("odometer_km"),
         "spec": [vehicle.get(k) for k in ("trim", "cab", "bed", "driveline", "engine")],
-        "carfax": bool(row.get("cf")), "vision": bool(row.get("vis")),
-        "settings": str(srow.get("updated_at")) if srow else None,
     }
     return hashlib.sha256(json.dumps(sig, sort_keys=True, default=str).encode()).hexdigest()
 

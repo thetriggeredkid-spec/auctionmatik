@@ -153,6 +153,7 @@ def api_evaluate_stream():
     contract = request.args.get("contract")
     mode = request.args.get("mode", "deep")
     profile = request.args.get("profile", "charles")
+    force = request.args.get("force") in ("1", "true", "yes")  # explicit re-appraise → recompute
     ai_mode = mode if mode in ("triage", "deep") else None
     if not contract:
         return jsonify(error="contract required"), 400
@@ -163,6 +164,7 @@ def api_evaluate_stream():
         conn = get_conn()
         try:
             v = evaluate(conn, contract, profile=profile, ai_mode=ai_mode,
+                         use_deep_cache=not force,
                          progress=lambda stage: q.put(("progress", stage)))
             q.put(("result", v))
         except Exception as e:  # noqa: BLE001

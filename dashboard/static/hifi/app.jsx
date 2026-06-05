@@ -34,8 +34,8 @@ const API = {
     if (!r.ok) throw new Error(j.error || ("evaluate " + r.status));
     return j.vehicle;
   },
-  evaluateStream(contract, mode, profile, { onProgress, onResult, onError }) {
-    const es = new EventSource(`/api/evaluate_stream?contract=${encodeURIComponent(contract)}&mode=${mode}&profile=${profile}`);
+  evaluateStream(contract, mode, profile, { onProgress, onResult, onError, force }) {
+    const es = new EventSource(`/api/evaluate_stream?contract=${encodeURIComponent(contract)}&mode=${mode}&profile=${profile}${force ? "&force=1" : ""}`);
     let settled = false;
     es.addEventListener("progress", (e) => { if (!settled) { try { onProgress(JSON.parse(e.data)); } catch (_) {} } });
     es.addEventListener("result", (e) => { if (settled) return; settled = true; es.close(); try { onResult(JSON.parse(e.data)); } catch (_) { onError("bad result"); } });
@@ -583,11 +583,14 @@ function App() {
       : x)));
   }
 
-  function reappraiseDeep(contract) {
+  // Streamed deep run (with progress). `force` bypasses the server cache — used only
+  // by an explicit ↻ Re-appraise, never on a normal open/refresh.
+  function reappraiseDeep(contract, force = false) {
     setEvalState((s) => ({ ...s, [contract]: "loading" }));
     setDeepProgress((s) => ({ ...s, [contract]: { stages: [], startedAt: Date.now() } }));
     const clearProg = () => setDeepProgress((s) => { const c = { ...s }; delete c[contract]; return c; });
     API.evaluateStream(contract, "deep", profile, {
+      force,
       onProgress: (stage) => setDeepProgress((s) => {
         const p = s[contract] || { stages: [], startedAt: Date.now() };
         return { ...s, [contract]: { ...p, stages: [...p.stages, stage] } };
@@ -597,8 +600,20 @@ function App() {
     });
   }
 
+  // Read an already-cached deep result instantly (no stream, no progress UI) — used
+  // when the row is deepReady so a refresh/revisit never re-runs the analysis.
+  async function loadCachedDeep(contract) {
+    setEvalState((s) => ({ ...s, [contract]: "loading" }));
+    try {
+      _applyEval(contract, await API.evaluate(contract, "deep", profile), "deep");
+      setEvalState((s) => ({ ...s, [contract]: "done" }));
+    } catch (e) {
+      setEvalState((s) => ({ ...s, [contract]: "error: " + (e.message || "unknown") }));
+    }
+  }
+
   async function reappraise(contract, runMode) {
-    if (runMode === "deep") { reappraiseDeep(contract); return; }
+    if (runMode === "deep") { reappraiseDeep(contract, true); return; }  // explicit → fresh run
     setEvalState((s) => ({ ...s, [contract]: "loading" }));
     try {
       _applyEval(contract, await API.evaluate(contract, runMode, profile), runMode);
@@ -608,15 +623,16 @@ function App() {
     }
   }
 
-  // On opening a card: triage shows the deterministic result (identical to the
-  // lane — no flip); only an *unscored* row needs a one-time deterministic eval.
-  // deep runs the AI appraisal once per mode/profile. Nothing re-runs needlessly.
+  // On opening a card: triage shows the deterministic result (identical to the lane).
+  // deep: if a cached result exists (deepReady) load it instantly; otherwise run the
+  // deep appraisal once and cache it. Refresh/revisit never re-runs a cached deep.
   useEffectApp(() => {
     if (view !== "card" || !live || !v) return;
     if (evalState[v.contract] === "loading") return;
     if (mode === "deep") {
-      if (v._full && v._mode === "deep" && v._profile === profile) return;
-      reappraise(v.contract, "deep");
+      if (v._full && v._mode === "deep" && v._profile === profile) return;  // already loaded this session
+      if (v.deepReady) loadCachedDeep(v.contract);                          // cached → instant, no re-run
+      else reappraiseDeep(v.contract, false);                              // genuine first run → stream + cache
     } else {
       if (v.scored) return;            // already has the lane's deterministic verdict
       reappraise(v.contract, "lite");
