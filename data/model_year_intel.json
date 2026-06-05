@@ -1,0 +1,326 @@
+{
+  "_notes": "Model year intelligence database. Charles is the domain expert — all entries here should be validated by him. Format: make+model key is UPPERCASE. Generations define body/platform boundaries that affect buyer pool and desirability. Known issues affect specific year ranges and have a value_impact_pct (negative = devaluing). Add entries freely — the engine silently ignores anything it doesn't find here.",
+
+  "TOYOTA RAV4": {
+    "generations": [
+      {"gen": 5, "years": [2019, 2030], "name": "XA50", "notes": "Complete redesign, much more desirable than XA40. Higher demand, commands significant premium over prior gen."},
+      {"gen": 4, "years": [2013, 2018], "name": "XA40", "notes": "Older boxy design, significantly less desirable than XA50 despite similar mechanicals."},
+      {"gen": 3, "years": [2006, 2012], "name": "XA30"}
+    ],
+    "known_issues": [],
+    "cross_gen_penalty_pct": -18
+  },
+
+  "TOYOTA COROLLA": {
+    "generations": [
+      {"gen": 12, "years": [2020, 2030], "name": "E210", "notes": "New platform, much more stylish, significantly more desirable."},
+      {"gen": 11, "years": [2014, 2019], "name": "E170"},
+      {"gen": 10, "years": [2009, 2013], "name": "E140/E150"}
+    ],
+    "known_issues": [],
+    "cross_gen_penalty_pct": -12
+  },
+
+  "TOYOTA CAMRY": {
+    "generations": [
+      {"gen": 8, "years": [2018, 2030], "name": "XV70", "notes": "Major style overhaul, Toyota New Global Architecture, significantly more desirable."},
+      {"gen": 7, "years": [2012, 2017], "name": "XV50"}
+    ],
+    "known_issues": [],
+    "cross_gen_penalty_pct": -15
+  },
+
+  "NISSAN ROGUE": {
+    "generations": [
+      {"gen": 3, "years": [2021, 2030], "name": "T33", "notes": "New generation, improved reliability, clean break from CVT issues."},
+      {"gen": 2, "years": [2014, 2020], "name": "T32"}
+    ],
+    "known_issues": [
+      {
+        "years": [2014, 2016],
+        "issue": "CVT transmission failure",
+        "detail": "Jatco CVT7 units prone to failure in cold weather — extremely common in Alberta. High repair cost ($3,000–$5,000). Buyers aware of this; these years trade significantly below 2017+.",
+        "severity": "high",
+        "value_impact_pct": -18
+      },
+      {
+        "years": [2014, 2020],
+        "issue": "CVT reliability concern (general)",
+        "detail": "All T32 Rogues have CVT concerns; 2017+ are better but not immune. Buyers discount these vs. 2021+ significantly.",
+        "severity": "medium",
+        "value_impact_pct": -8
+      }
+    ],
+    "cross_gen_penalty_pct": -20
+  },
+
+  "NISSAN ALTIMA": {
+    "generations": [
+      {"gen": 6, "years": [2019, 2030], "name": "L34", "notes": "AWD option added, VC-Turbo engine, fresh styling."},
+      {"gen": 5, "years": [2013, 2018], "name": "L33"}
+    ],
+    "known_issues": [
+      {
+        "years": [2013, 2018],
+        "issue": "CVT reliability (Jatco)",
+        "detail": "Same CVT concerns as Rogue. Less severe but still a discount factor in AB market.",
+        "severity": "medium",
+        "value_impact_pct": -8
+      }
+    ],
+    "cross_gen_penalty_pct": -12
+  },
+
+  "HONDA CR-V": {
+    "generations": [
+      {"gen": 6, "years": [2023, 2030], "name": "RS6"},
+      {"gen": 5, "years": [2017, 2022], "name": "RW", "notes": "Major style/platform update, very desirable gen."},
+      {"gen": 4, "years": [2012, 2016], "name": "RM"}
+    ],
+    "known_issues": [
+      {
+        "years": [2017, 2019],
+        "issue": "Oil dilution — 1.5T engine",
+        "detail": "1.5L turbo in cold climates experiences fuel diluting into oil. Honda issued service bulletin but not full recall. Can cause engine wear. Buyers who know this discount these years.",
+        "severity": "medium",
+        "value_impact_pct": -5
+      }
+    ],
+    "cross_gen_penalty_pct": -14
+  },
+
+  "HONDA CIVIC": {
+    "generations": [
+      {"gen": 11, "years": [2022, 2030], "name": "FE/FL", "notes": "Clean new design, much more desirable than gen 10."},
+      {"gen": 10, "years": [2016, 2021], "name": "FC/FK"},
+      {"gen": 9, "years": [2012, 2015], "name": "FB"}
+    ],
+    "known_issues": [
+      {
+        "years": [2016, 2017],
+        "issue": "1.5T oil dilution (cold weather)",
+        "detail": "Same issue as CR-V — fuel mixing into oil in cold climates. Affects AB market pricing.",
+        "severity": "low",
+        "value_impact_pct": -4
+      }
+    ],
+    "cross_gen_penalty_pct": -10
+  },
+
+  "FORD F-150": {
+    "generations": [
+      {"gen": 14, "years": [2021, 2030], "name": "P702", "notes": "Aluminum body continued, new hybrid options, major interior refresh. Highly desirable."},
+      {"gen": 13, "years": [2015, 2020], "name": "P415", "notes": "Aluminum body introduced — initially some buyer skepticism but now fully accepted."},
+      {"gen": 12, "years": [2009, 2014], "name": "P415 prev"}
+    ],
+    "known_issues": [
+      {
+        "years": [2011, 2014],
+        "issue": "EcoBoost 3.5L timing chain",
+        "detail": "High mileage 2011-2014 3.5L EcoBoost engines prone to timing chain issues. Significant repair cost.",
+        "severity": "medium",
+        "value_impact_pct": -6
+      },
+      {
+        "years": [2015, 2016],
+        "issue": "Aluminum body repair cost perception",
+        "detail": "Early aluminum-body trucks. Some buyers concerned about repair costs though issue is mostly resolved with shop education.",
+        "severity": "low",
+        "value_impact_pct": -3
+      }
+    ],
+    "cross_gen_penalty_pct": -10
+  },
+
+  "RAM 1500": {
+    "generations": [
+      {"gen": 5, "years": [2019, 2030], "name": "DT", "notes": "Completely new truck — coil spring rear suspension, much more refined. Strong demand."},
+      {"gen": 4, "years": [2009, 2018], "name": "DS/DJ", "notes": "\"Classic\" body continues in production alongside gen 5."}
+    ],
+    "known_issues": [
+      {
+        "years": [2014, 2018],
+        "issue": "8-speed transmission shudder / rough shifting",
+        "detail": "ZF 8HP70 transmission calibration issues. Software fix available but not always applied. Common complaint.",
+        "severity": "low",
+        "value_impact_pct": -3
+      }
+    ],
+    "cross_gen_penalty_pct": -15
+  },
+
+  "JEEP WRANGLER": {
+    "generations": [
+      {"gen": 4, "years": [2018, 2030], "name": "JL", "notes": "JL is widely preferred over JK — improved refinement, better highway manners, new engines. Commands clear premium."},
+      {"gen": 3, "years": [2007, 2018], "name": "JK"},
+      {"gen": 2, "years": [1997, 2006], "name": "TJ"}
+    ],
+    "known_issues": [
+      {
+        "years": [2018, 2020],
+        "issue": "JL early production quality issues",
+        "detail": "First-year JL had some electrical gremlins and soft-top sealing issues. Minor discount vs 2021+ JL.",
+        "severity": "low",
+        "value_impact_pct": -2
+      }
+    ],
+    "cross_gen_penalty_pct": -12
+  },
+
+  "JEEP GRAND CHEROKEE": {
+    "generations": [
+      {"gen": 5, "years": [2021, 2030], "name": "WL", "notes": "Completely new platform — 3-row option, premium positioning. Much more desirable than WK2."},
+      {"gen": 4, "years": [2011, 2021], "name": "WK2"}
+    ],
+    "known_issues": [
+      {
+        "years": [2011, 2015],
+        "issue": "3.6L Pentastar valve train tick",
+        "detail": "Common tick/rattle at startup in cold weather. Usually cosmetic but concerning to buyers.",
+        "severity": "low",
+        "value_impact_pct": -3
+      }
+    ],
+    "cross_gen_penalty_pct": -18
+  },
+
+  "HYUNDAI TUCSON": {
+    "generations": [
+      {"gen": 4, "years": [2022, 2030], "name": "NX4", "notes": "Dramatic redesign — polarizing but widely popular. Commands strong premium."},
+      {"gen": 3, "years": [2016, 2021], "name": "TL"},
+      {"gen": 2, "years": [2010, 2015], "name": "LM"}
+    ],
+    "known_issues": [],
+    "cross_gen_penalty_pct": -15
+  },
+
+  "KIA SPORTAGE": {
+    "generations": [
+      {"gen": 5, "years": [2023, 2030], "name": "NQ5", "notes": "New platform, highly styled, strong demand."},
+      {"gen": 4, "years": [2017, 2022], "name": "QL"},
+      {"gen": 3, "years": [2011, 2016], "name": "SL"}
+    ],
+    "known_issues": [],
+    "cross_gen_penalty_pct": -14
+  },
+
+  "KIA SORENTO": {
+    "generations": [
+      {"gen": 4, "years": [2021, 2030], "name": "MQ4", "notes": "New platform — much more refined, available mild hybrid."},
+      {"gen": 3, "years": [2016, 2020], "name": "UM"},
+      {"gen": 2, "years": [2011, 2015], "name": "XM"}
+    ],
+    "known_issues": [],
+    "cross_gen_penalty_pct": -14
+  },
+
+  "FORD ESCAPE": {
+    "generations": [
+      {"gen": 4, "years": [2020, 2030], "name": "CV", "notes": "New platform, more car-like."},
+      {"gen": 3, "years": [2013, 2019], "name": "BJ"}
+    ],
+    "known_issues": [
+      {
+        "years": [2013, 2016],
+        "issue": "1.6L EcoBoost coolant loss / head gasket",
+        "detail": "Known issue with coolant entering combustion chamber. Ford extended warranty but many were not fixed. Significant discount for high-mileage examples.",
+        "severity": "high",
+        "value_impact_pct": -15
+      }
+    ],
+    "cross_gen_penalty_pct": -10
+  },
+
+  "CHEVROLET EQUINOX": {
+    "generations": [
+      {"gen": 3, "years": [2018, 2030], "name": "C1XX", "notes": "Lighter, more efficient. Cleaner design."},
+      {"gen": 2, "years": [2010, 2017], "name": "Theta II"}
+    ],
+    "known_issues": [
+      {
+        "years": [2010, 2012],
+        "issue": "2.4L oil consumption",
+        "detail": "Excessive oil consumption known issue. Class action settlement. Very high buyer awareness — heavy discounting on 2010-2012.",
+        "severity": "high",
+        "value_impact_pct": -20
+      }
+    ],
+    "cross_gen_penalty_pct": -12
+  },
+
+  "FORD EXPLORER": {
+    "generations": [
+      {"gen": 6, "years": [2020, 2030], "name": "U625", "notes": "Rear-wheel-drive platform switch, more premium focus. New buyer perception."},
+      {"gen": 5, "years": [2011, 2019], "name": "U502"}
+    ],
+    "known_issues": [
+      {
+        "years": [2011, 2017],
+        "issue": "Exhaust fumes in cabin",
+        "detail": "NHTSA investigation into exhaust entering cabin through rear door seals. Safety concern. Ford issued fix but buyer awareness is high and discount is real.",
+        "severity": "medium",
+        "value_impact_pct": -8
+      }
+    ],
+    "cross_gen_penalty_pct": -12
+  },
+
+  "DODGE DURANGO": {
+    "generations": [
+      {"gen": 3, "years": [2011, 2030], "name": "WD", "notes": "Long-running generation — no major redesign. Minor facelift updates."}
+    ],
+    "known_issues": [
+      {
+        "years": [2011, 2014],
+        "issue": "3.6L Pentastar valve train tick",
+        "detail": "See Grand Cherokee — same engine, same concern.",
+        "severity": "low",
+        "value_impact_pct": -3
+      }
+    ],
+    "cross_gen_penalty_pct": -5
+  },
+
+  "SUBARU OUTBACK": {
+    "generations": [
+      {"gen": 6, "years": [2020, 2030], "name": "BT"},
+      {"gen": 5, "years": [2015, 2019], "name": "BS"}
+    ],
+    "known_issues": [
+      {
+        "years": [2013, 2017],
+        "issue": "EJ25 / FA20 oil consumption (2.5L)",
+        "detail": "Some examples consume oil at higher-than-normal rates. Well-documented concern in the Subaru community. Buyers discount these.",
+        "severity": "medium",
+        "value_impact_pct": -6
+      }
+    ],
+    "cross_gen_penalty_pct": -10
+  },
+
+  "GMC SIERRA 1500": {
+    "generations": [
+      {"gen": 5, "years": [2019, 2030], "name": "T1", "notes": "New platform shared with Silverado 1500 T1. Significant improvement."},
+      {"gen": 4, "years": [2014, 2018], "name": "K2"}
+    ],
+    "known_issues": [],
+    "cross_gen_penalty_pct": -10
+  },
+
+  "CHEVROLET SILVERADO 1500": {
+    "generations": [
+      {"gen": 5, "years": [2019, 2030], "name": "T1XX", "notes": "New platform — lighter, more tech, strong demand."},
+      {"gen": 4, "years": [2014, 2018], "name": "K2"}
+    ],
+    "known_issues": [
+      {
+        "years": [2014, 2018],
+        "issue": "8L90 / 8L45 8-speed shudder",
+        "detail": "Torque converter shudder in 8-speed equipped trucks. Fluid fix usually resolves it but buyers are aware.",
+        "severity": "low",
+        "value_impact_pct": -3
+      }
+    ],
+    "cross_gen_penalty_pct": -10
+  }
+}

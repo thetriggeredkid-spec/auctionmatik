@@ -26,12 +26,14 @@ import sys
 sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.dirname(__file__)))
 
 from engine.comps import get_comp_pool
-from engine.factors import mileage, condition, history, options, market_context, location
+from engine.retail_comps import get_retail_comp_pool
+from engine.factors import mileage, condition, history, options, market_context, location, model_year
 
 # Retail uncertainty band: mid ± this
 RETAIL_UNCERTAINTY = 0.08
 
-# Wholesale relationship to retail
+# Wholesale is derived FROM retail (not the other way)
+# wholesale ≈ retail minus dealer margin and reconditioning — ~82% of retail
 WHOLESALE_RATIO = 0.82
 WHOLESALE_UNCERTAINTY = 0.05
 
@@ -55,10 +57,35 @@ def valuate(vehicle: dict, conn=None, log_to_db: bool = False) -> dict:
         wholesale_{low,mid,high}, confidence, comp_count,
         factor_breakdown (list), flags (list), comp_list (top 5)
     """
-    # ── Step 1: Build comp pool ───────────────────────────────────────────
-    comp_pool = get_comp_pool(vehicle, conn=conn)
+    # ── Step 1: Build comp pools ──────────────────────────────────────────
+    # PRIMARY: Retail comps from Facebook Marketplace + Kijiji
+    # These are active retail listings — asking prices reflect what the market expects.
+    # FALLBACK: Regal sold comps (wholesale auction data) — used only when retail data
+    # is sparse. If falling back, we treat Regal median as wholesale and back-calculate retail.
+    retail_pool = get_retail_comp_pool(vehicle, conn=conn)
+    wholesale_pool = get_comp_pool(vehicle, conn=conn)
 
-    base_median = comp_pool.get("base_median")
+    using_retail_primary = retail_pool.get("has_data") and retail_pool.get("retail_median")
+
+    if using_retail_primary:
+        # Retail comps are available — use as primary anchor
+        base_median = retail_pool["retail_median"]
+        comp_pool = retail_pool  # for mileage percentiles etc.
+        comp_pool["comp_list"] = retail_pool["comp_list"]  # for display
+        price_source = "retail_market"
+    elif wholesale_pool.get("base_median"):
+        # Fallback: derive retail from wholesale Regal auction data
+        # wholesale_median / 0.82 → implied retail
+        base_median = int(wholesale_pool["base_median"] / WHOLESALE_RATIO)
+        comp_pool = wholesale_pool
+        price_source = "wholesale_derived"
+    else:
+        return {
+            "error": "Insufficient comp data to produce a valuation.",
+            "comp_count": 0,
+            "confidence": "low",
+        }
+
     if not base_median:
         return {
             "error": "Insufficient comp data to produce a valuation.",
@@ -69,6 +96,7 @@ def valuate(vehicle: dict, conn=None, log_to_db: bool = False) -> dict:
     # ── Step 2: Apply each factor ─────────────────────────────────────────
     factor_results = []
 
+    factor_results.append(model_year.evaluate(vehicle, comp_pool, base_median))
     factor_results.append(mileage.evaluate(vehicle, comp_pool, base_median))
     factor_results.append(condition.evaluate(vehicle, comp_pool, base_median))
     factor_results.append(history.evaluate(vehicle, comp_pool, base_median))
@@ -137,6 +165,9 @@ def valuate(vehicle: dict, conn=None, log_to_db: bool = False) -> dict:
     result = {
         "vehicle_summary": f"{vehicle.get('year')} {vehicle.get('make')} {vehicle.get('model')} "
                            f"{vehicle.get('trim', '')} {vehicle.get('driveline', '')}".strip(),
+        "price_source": price_source,           # 'retail_market' | 'wholesale_derived'
+        "retail_comp_count": retail_pool.get("comp_count", 0),
+        "wholesale_comp_count": wholesale_pool.get("comp_count", 0),
         "base_median": base_median,
         "adjusted_estimate": adjusted_estimate,
         "combined_multiplier": combined_multiplier,

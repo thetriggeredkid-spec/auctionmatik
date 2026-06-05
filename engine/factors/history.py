@@ -32,6 +32,7 @@ SERVICE_RECORD_DELTAS = {
     "self":          -0.02,
     "sparse":        -0.04,
     "none":          -0.05,
+    "unknown":        0.0,   # a Carfax/history report exists but we haven't read it — don't assume the worst
 }
 
 ODOMETER_INTEGRITY_DELTAS = {

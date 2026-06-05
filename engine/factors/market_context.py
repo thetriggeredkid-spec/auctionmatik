@@ -27,8 +27,11 @@ SUPPLY_BANDS = [
 DOM_FREE_DAYS = 14
 DOM_PENALTY_PER_DAY = -0.002
 
-# Finance Repo / motivated seller signals
-FR_DELTA = -0.05  # Finance repo = motivated seller
+# Finance Repo: NOT a value penalty. At Regal these are same-day / quick release —
+# a motivated-SELLER (buy-side) signal, not a hold burden or a resale-value defect.
+# Charles (domain expert): do not penalize a finance repo. Kept as an informational
+# 0% signal only.
+FR_DELTA = 0.0
 
 # Dealer-at-auction signal (retail failed)
 DEALER_AUCTION_DELTA = -0.04
@@ -72,12 +75,14 @@ def evaluate(vehicle: dict, comp_pool: dict, base_price: int) -> dict:
             "label": "Finance Repo (motivated seller)",
             "delta_pct": FR_DELTA * 100,
             "dollar_impact": int(base_price * FR_DELTA),
-            "reasoning": "Declared Finance Repo — lender/seller motivated to sell quickly.",
+            "reasoning": "Declared Finance Repo — same-day/quick release at Regal; motivated seller "
+                         "(buy-side signal). No resale-value penalty applied.",
         })
         flags.append({
             "code": "finance_repo",
-            "severity": "medium",
-            "message": "Finance Repo declaration — motivated seller, likely priced to move.",
+            "severity": "low",
+            "message": "Finance Repo — quick same-day release, motivated seller (priced to move). "
+                       "Not a value defect or a hold-time penalty.",
         })
 
     # Dealer listing at auction (retail exit failure signal)
