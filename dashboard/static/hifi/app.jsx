@@ -518,11 +518,12 @@ function App() {
   const [live, setLive] = useStateApp(false);
   const [saleLoading, setSaleLoading] = useStateApp(false);
   const [screening, setScreening] = useStateApp(false);
-  const [evalState, setEvalState] = useStateApp({}); // contract -> "loading" | "done" | "error: ..."
+  const [evalState, setEvalState] = useStateApp({}); // "contract|profile" -> loading|done|error
+  const [deepResults, setDeepResults] = useStateApp({}); // "contract|profile" -> deep result (per profile, survives sale reloads)
   const [scanState, setScanState] = useStateApp({}); // contract -> comp-scan status
   const [pullState, setPullState] = useStateApp({}); // contract -> carfax-pull status
   const [visionState, setVisionState] = useStateApp({}); // contract -> vision-run status
-  const [deepProgress, setDeepProgress] = useStateApp({}); // contract -> {stages, startedAt}
+  const [deepProgress, setDeepProgress] = useStateApp({}); // "contract|profile" -> {stages, startedAt}
   const [prep, setPrep] = useStateApp(null); // active prep job view for the selected sale
   const [profileList, setProfileList] = useStateApp(["charles", "mechanic"]); // from settings
 
@@ -569,75 +570,81 @@ function App() {
   useEffectApp(() => { if (live && selected) loadSale(selected, null); },
     [selected, profile, live]);
 
-  const v = vehicles[idx];
+  // Per-(contract,profile) keys so each buyer profile is fully independent — switching
+  // profile never clobbers or blocks the other's result, and a deep run for one profile
+  // can finish in the background without touching the other.
+  const dkey = (contract, p = profile) => contract + "|" + p;
+
+  const baseV = vehicles[idx];
+  const curKey = baseV ? dkey(baseV.contract) : null;
+  // In deep mode, layer this profile's cached deep result over the base (deterministic) row.
+  const v = (baseV && mode === "deep" && deepResults[curKey])
+    ? { ...baseV, ...deepResults[curKey] } : baseV;
   const sale = (live && saleMeta)
     ? { ...saleMeta, vehicles }
     : { label: "Sample cases", day: "", date: "", count: vehicles.length, screened: vehicles.length, vehicles };
 
-  // runMode "lite"/"triage" = deterministic/quick (same result the lane shows);
-  // "deep" = full AI appraisal, streamed with live progress. Result merges back into
-  // `vehicles`, so the lane row updates and stays put.
-  function _applyEval(contract, full, runMode) {
-    setVehicles((vs) => vs.map((x) => (x.contract === contract
-      ? { ...x, ...full, scored: true, _full: runMode === "deep", _mode: runMode, _profile: profile }
-      : x)));
+  // deterministic/quick re-eval (lite/triage) merges into the base row in `vehicles`.
+  function _applyEval(contract, full) {
+    setVehicles((vs) => vs.map((x) => (x.contract === contract ? { ...x, ...full, scored: true } : x)));
   }
 
-  // Streamed deep run (with progress). `force` bypasses the server cache — used only
-  // by an explicit ↻ Re-appraise, never on a normal open/refresh.
-  function reappraiseDeep(contract, force = false) {
-    setEvalState((s) => ({ ...s, [contract]: "loading" }));
-    setDeepProgress((s) => ({ ...s, [contract]: { stages: [], startedAt: Date.now() } }));
-    const clearProg = () => setDeepProgress((s) => { const c = { ...s }; delete c[contract]; return c; });
-    API.evaluateStream(contract, "deep", profile, {
-      force,
-      onProgress: (stage) => setDeepProgress((s) => {
-        const p = s[contract] || { stages: [], startedAt: Date.now() };
-        return { ...s, [contract]: { ...p, stages: [...p.stages, stage] } };
-      }),
-      onResult: (full) => { _applyEval(contract, full, "deep"); setEvalState((s) => ({ ...s, [contract]: "done" })); clearProg(); },
-      onError: (err) => { setEvalState((s) => ({ ...s, [contract]: "error: " + (err && err.error ? err.error : err) })); clearProg(); },
+  // forget any cached deep result(s) for a contract (all profiles) — used after an input
+  // change (overrides/carfax/vision/comp-flag) so the deep re-runs with the new inputs.
+  function _invalidateDeep(contract) {
+    setDeepResults((s) => {
+      const c = { ...s };
+      Object.keys(c).forEach((k) => { if (k.startsWith(contract + "|")) delete c[k]; });
+      return c;
     });
   }
 
-  // Read an already-cached deep result instantly (no stream, no progress UI) — used
-  // when the row is deepReady so a refresh/revisit never re-runs the analysis.
-  async function loadCachedDeep(contract) {
-    setEvalState((s) => ({ ...s, [contract]: "loading" }));
-    try {
-      _applyEval(contract, await API.evaluate(contract, "deep", profile), "deep");
-      setEvalState((s) => ({ ...s, [contract]: "done" }));
-    } catch (e) {
-      setEvalState((s) => ({ ...s, [contract]: "error: " + (e.message || "unknown") }));
-    }
+  // Streamed deep run for a specific (contract, profile). Writes ONLY that profile's
+  // slot, so it's safe to leave running in the background after switching profiles.
+  // `force` bypasses the server cache (explicit ↻ Re-appraise only).
+  function reappraiseDeep(contract, runProfile, force = false) {
+    const k = dkey(contract, runProfile);
+    setEvalState((s) => ({ ...s, [k]: "loading" }));
+    setDeepProgress((s) => ({ ...s, [k]: { stages: [], startedAt: Date.now() } }));
+    const clearProg = () => setDeepProgress((s) => { const c = { ...s }; delete c[k]; return c; });
+    API.evaluateStream(contract, "deep", runProfile, {
+      force,
+      onProgress: (stage) => setDeepProgress((s) => {
+        const p = s[k] || { stages: [], startedAt: Date.now() };
+        return { ...s, [k]: { ...p, stages: [...p.stages, stage] } };
+      }),
+      onResult: (full) => { setDeepResults((s) => ({ ...s, [k]: full })); setEvalState((s) => ({ ...s, [k]: "done" })); clearProg(); },
+      onError: (err) => { setEvalState((s) => ({ ...s, [k]: "error: " + (err && err.error ? err.error : err) })); clearProg(); },
+    });
   }
 
   async function reappraise(contract, runMode) {
-    if (runMode === "deep") { reappraiseDeep(contract, true); return; }  // explicit → fresh run
-    setEvalState((s) => ({ ...s, [contract]: "loading" }));
+    if (runMode === "deep") { _invalidateDeep(contract); reappraiseDeep(contract, profile, true); return; }  // explicit → fresh run
+    const k = dkey(contract);
+    setEvalState((s) => ({ ...s, [k]: "loading" }));
     try {
-      _applyEval(contract, await API.evaluate(contract, runMode, profile), runMode);
-      setEvalState((s) => ({ ...s, [contract]: "done" }));
+      _applyEval(contract, await API.evaluate(contract, runMode, profile));
+      setEvalState((s) => ({ ...s, [k]: "done" }));
     } catch (e) {
-      setEvalState((s) => ({ ...s, [contract]: "error: " + (e.message || "unknown") }));
+      setEvalState((s) => ({ ...s, [k]: "error: " + (e.message || "unknown") }));
     }
   }
 
-  // On opening a card: triage shows the deterministic result (identical to the lane).
-  // deep: if a cached result exists (deepReady) load it instantly; otherwise run the
-  // deep appraisal once and cache it. Refresh/revisit never re-runs a cached deep.
+  // Opening / switching: triage shows the per-profile deterministic base row. deep loads
+  // this profile's result once (streaming hits the server cache fast) and keeps it; a
+  // background run for another profile never affects the one on screen.
   useEffectApp(() => {
-    if (view !== "card" || !live || !v) return;
-    if (evalState[v.contract] === "loading") return;
+    if (view !== "card" || !live || !baseV) return;
+    const k = curKey;
     if (mode === "deep") {
-      if (v._full && v._mode === "deep" && v._profile === profile) return;  // already loaded this session
-      if (v.deepReady) loadCachedDeep(v.contract);                          // cached → instant, no re-run
-      else reappraiseDeep(v.contract, false);                              // genuine first run → stream + cache
+      if (deepResults[k] || evalState[k] === "loading") return;  // already have it / in flight
+      reappraiseDeep(baseV.contract, profile, false);
     } else {
-      if (v.scored) return;            // already has the lane's deterministic verdict
-      reappraise(v.contract, "lite");
+      if (evalState[k] === "loading") return;
+      if (baseV.scored) return;        // already has the lane's deterministic verdict
+      reappraise(baseV.contract, "lite");
     }
-  }, [view, idx, mode, profile, live]);
+  }, [view, idx, mode, profile, live, deepResults]);
 
   async function scanComps(contract) {
     setScanState((s) => ({ ...s, [contract]: "loading" }));
@@ -645,28 +652,30 @@ function App() {
       const full = await API.fetchComps(contract, profile);
       // merge the freshly-scraped comps in without clobbering an existing AI verdict
       setVehicles((vs) => vs.map((x) => (x.contract === contract ? { ...x, comps: full.comps, pastSales: full.pastSales } : x)));
+      _invalidateDeep(contract);   // comp pool changed → deep must re-run
       setScanState((s) => ({ ...s, [contract]: "done" }));
     } catch (e) {
       setScanState((s) => ({ ...s, [contract]: "error: " + (e.message || "unknown") }));
     }
   }
 
-  // merge the WHOLE re-evaluated vehicle so summary/reasoning/sale/rules/etc. never go stale
+  // merge the WHOLE re-evaluated (deterministic) vehicle into the base row, and drop any
+  // cached deep result — inputs changed, so the deep re-runs with them.
   function _mergeRepriced(contract, full) {
     if (!full) return;
-    setVehicles((vs) => vs.map((x) => (x.contract === contract
-      ? { ...x, ...full, scored: true, _full: false, _mode: "lite", _profile: profile }
-      : x)));
+    setVehicles((vs) => vs.map((x) => (x.contract === contract ? { ...x, ...full, scored: true } : x)));
+    _invalidateDeep(contract);
   }
 
   async function flagComp(externalId, contract, reason) {
-    setEvalState((s) => ({ ...s, [contract]: "loading" }));   // show the re-pricing banner
+    const k = dkey(contract);
+    setEvalState((s) => ({ ...s, [k]: "loading" }));   // show the re-pricing banner
     try {
       await API.flagComp(externalId, contract, reason);
       _mergeRepriced(contract, await API.evaluate(contract, "lite", profile));
-      setEvalState((s) => ({ ...s, [contract]: "done" }));
+      setEvalState((s) => ({ ...s, [k]: "done" }));
     } catch (e) {
-      setEvalState((s) => ({ ...s, [contract]: "error: " + (e.message || "unknown") }));
+      setEvalState((s) => ({ ...s, [k]: "error: " + (e.message || "unknown") }));
     }
   }
 
@@ -760,7 +769,7 @@ function App() {
             prep={prep} onPrep={startPrep} onPrepCancel={cancelPrep} />)
         : (v
           ? <DetailView key={"d" + idx} v={v} mode={mode} profile={profile} setView={setView}
-            evalState={evalState[v.contract]} deepProgress={deepProgress[v.contract]} onReappraise={reappraise}
+            evalState={evalState[curKey]} deepProgress={deepProgress[curKey]} onReappraise={reappraise}
             onScanComps={scanComps} scanState={scanState[v.contract]}
             onFlagComp={flagComp} onSaveFeedback={saveFeedback} onSaveCarfax={saveCarfax}
             onPullCarfax={pullCarfax} pullState={pullState[v.contract]}
