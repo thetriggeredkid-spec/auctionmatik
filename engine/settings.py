@@ -78,22 +78,18 @@ def load(conn) -> dict:
     cur.execute("SELECT settings FROM app_settings WHERE id = 1")
     row = cur.fetchone()
     cur.close()
-    ov = (row.get("settings") if row else None) or {}
-    if isinstance(ov, str):
+    overrides = (row.get("settings") if row else None) or {}
+    if isinstance(overrides, str):
         try:
-            ov = json.loads(ov)
+            overrides = json.loads(overrides)
         except (ValueError, TypeError):
-            ov = {}
-    # Profiles fully replace defaults when the editor sends them (so deletes/renames stick).
-    merged = _deep_merge(_defaults(), ov)
-    if "profiles" in ov:
-        merged["profiles"] = ov["profiles"]
-    if "profile_order" in ov:
-        merged["profile_order"] = ov["profile_order"]
-    if "margin_tiers" in ov:
-        merged["margin_tiers"] = ov["margin_tiers"]
-    if "fee_schedule" in ov:
-        merged["fee_schedule"] = ov["fee_schedule"]
+            overrides = {}
+    merged = _deep_merge(_defaults(), overrides)
+    # These keys must fully replace (not deep-merge into) the defaults when the editor
+    # sends them, so list deletes/renames/reorders stick instead of being merged back.
+    for key in ("profiles", "profile_order", "margin_tiers", "fee_schedule"):
+        if key in overrides:
+            merged[key] = overrides[key]
     return merged
 
 
@@ -121,12 +117,13 @@ def apply(merged: dict) -> None:
         adv.PROFILES.update(new_profiles)
 
     # Margin tiers + fee schedule (read at call time by get_margin/get_buyer_fee).
-    def _unI(x):
-        return float("inf") if x is None or x >= _INF else x
+    # Restore the JSON-friendly sentinel back to a real float("inf") top band.
+    def _to_inf(hi):
+        return float("inf") if hi is None or hi >= _INF else hi
     if merged.get("margin_tiers"):
-        mb.MARGIN_TIERS = [(lo, _unI(hi), m, lbl) for lo, hi, m, lbl in merged["margin_tiers"]]
+        mb.MARGIN_TIERS = [(lo, _to_inf(hi), m, lbl) for lo, hi, m, lbl in merged["margin_tiers"]]
     if merged.get("fee_schedule"):
-        mb.REGAL_FEE_SCHEDULE = [(lo, _unI(hi), f) for lo, hi, f in merged["fee_schedule"]]
+        mb.REGAL_FEE_SCHEDULE = [(lo, _to_inf(hi), f) for lo, hi, f in merged["fee_schedule"]]
 
     # GST — patch every module that imported it by value.
     gst = float(merged.get("gst_rate", mb.GST_RATE))

@@ -38,17 +38,20 @@ def route_mode(decl: dict, vision: dict, repair_est: dict, clean_value: int | No
 def value_mode_a(base_value: int, condition_deduction_pct: float,
                  other_deltas_pct: float, mechanical_reserve: int = 0) -> dict:
     """
-    Retail-grade value with guards.
+    Retail-grade value with guards (base_value in cents, value in cents out).
       condition_deduction_pct: total NEGATIVE % from condition+damage (e.g. -65.2)
       other_deltas_pct:        summed % of all NON-condition factors (mileage/history/market/location...)
       mechanical_reserve:      $ held back for known/unspecified mechanical risk
     """
-    cap = -CONDITION_DEDUCTION_CAP * 100
-    capped_condition = max(condition_deduction_pct, cap)        # don't deduct more than the cap
-    condition_capped = capped_condition != condition_deduction_pct
+    # Cap how much condition+damage alone can knock off the anchor.
+    cap_pct = -CONDITION_DEDUCTION_CAP * 100
+    capped_condition_pct = max(condition_deduction_pct, cap_pct)
+    condition_capped = capped_condition_pct != condition_deduction_pct
 
-    adjusted = base_value * (1 + other_deltas_pct / 100) * (1 + capped_condition / 100)
+    adjusted = base_value * (1 + other_deltas_pct / 100) * (1 + capped_condition_pct / 100)
     adjusted -= mechanical_reserve * 100                         # reserve in cents (base_value is cents)
+
+    # A running vehicle has a wholesale/parts floor below which it won't sell.
     floor = int(base_value * SALVAGE_FLOOR_RATIO)
     floored = adjusted < floor
     final = max(int(adjusted), floor)
@@ -72,7 +75,7 @@ def value_mode_b(clean_value: int, rebuilt: bool, repair_est: dict,
     """
     title_factor = TITLE_FACTOR_REBUILT if rebuilt else 1.0
     after_fix = int(clean_value * title_factor)
-    repair = (repair_est.get("total_mid", 0) if repair_est else 0) * 100  # to cents
+    repair = (repair_est.get("total_mid", 0) if repair_est else 0) * 100  # dollars -> cents
     parts_value = int(clean_value * PARTS_VALUE_RATIO)
 
     if repair >= after_fix:

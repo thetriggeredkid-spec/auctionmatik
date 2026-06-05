@@ -9,15 +9,16 @@ per Charles) is added on top because hidden damage is the norm on wrecks.
 
 estimate_repair(components, buffer=0.20) ->
 {
-    "line_items":   [{component, action, severity, matched, cost_low, cost_high}],
-    "unmatched":    [component, ...],            # need a manual quote
-    "subtotal_low": int, "subtotal_high": int,
-    "buffer_pct":   float,
-    "total_low":    int, "total_high": int, "total_mid": int,   # CAD dollars, buffer applied
+    "line_items":     [{component, action, severity, matched, contingent,
+                        cost_low, cost_high}],
+    "unmatched":      [component, ...],          # need a manual quote
+    "confirmed_low":  int, "confirmed_high":  int,   # confirmed-damage costs
+    "contingent_low": int, "contingent_high": int,   # "inspect" teardown reserve
+    "subtotal_low":   int, "subtotal_high":   int,   # confirmed + contingent
+    "buffer_pct":     float,
+    "total_low":      int, "total_high": int, "total_mid": int,  # CAD, buffer applied
 }
 """
-
-import re
 
 DEFAULT_BUFFER = 0.20      # +20% protection for hidden/under-estimated damage
 CONTINGENT_FACTOR = 0.30   # "inspect / replace if bent" items: counted at 30% (expected reserve, not full cost). Set 1.0 for worst-case.
@@ -91,15 +92,16 @@ def _match_cost(component: str) -> tuple[tuple[int, int], bool]:
 
 
 def _pick(cost: tuple[int, int], action: str, severity: str) -> tuple[int, int]:
-    """Narrow the range by action/severity (replace/severe -> high end)."""
+    """Narrow a (low, high) range based on action/severity."""
     low, high = cost
-    a = (action or "").lower()
-    s = (severity or "moderate").lower()
-    if a == "replace" or s == "severe":
-        return (int((low + high) / 2), high)        # mid..high
-    if a in ("repair", "refinish") or s == "minor":
-        return (low, int((low + high) / 2))          # low..mid
-    return (int(low * 1.0), int(high * 0.75))        # moderate: trim the top a bit
+    action = (action or "").lower()
+    severity = (severity or "moderate").lower()
+    mid = int((low + high) / 2)
+    if action == "replace" or severity == "severe":
+        return (mid, high)                  # bias to the top of the range
+    if action in ("repair", "refinish") or severity == "minor":
+        return (low, mid)                   # bias to the bottom of the range
+    return (low, int(high * 0.75))          # moderate: trim the top a bit
 
 
 def _is_contingent(action: str) -> bool:
@@ -118,15 +120,24 @@ def estimate_repair(components: list[dict], buffer: float = DEFAULT_BUFFER,
     confirmed_low = confirmed_high = 0
     contingent_low = contingent_high = 0
     for comp in components or []:
-        name = comp.get("component") if isinstance(comp, dict) else str(comp)
-        action = comp.get("action", "") if isinstance(comp, dict) else ""
-        severity = comp.get("severity", "moderate") if isinstance(comp, dict) else "moderate"
+        if isinstance(comp, dict):
+            name = comp.get("component")
+            action = comp.get("action", "")
+            severity = comp.get("severity", "moderate")
+        else:
+            name = str(comp)
+            action = ""
+            severity = "moderate"
+
         base_cost, matched = _match_cost(name)
         low, high = _pick(base_cost, action, severity)
+
         # Sourcing/labour profile: small jobs at DIY rate, large/structural at shop/OEM
         # (or used-parts rate if the profile sets large_factor < 1.0).
         factor = small_factor if (low + high) / 2 <= SMALL_REPAIR_THRESHOLD else large_factor
         low, high = int(low * factor), int(high * factor)
+
+        # "Inspect" items are a teardown reserve, not confirmed damage: count a fraction.
         contingent = _is_contingent(action)
         if contingent:
             low, high = int(low * contingent_factor), int(high * contingent_factor)
@@ -135,6 +146,7 @@ def estimate_repair(components: list[dict], buffer: float = DEFAULT_BUFFER,
         else:
             confirmed_low += low
             confirmed_high += high
+
         if not matched:
             unmatched.append(name)
         line_items.append({"component": name, "action": action, "severity": severity,

@@ -10,8 +10,8 @@ Usage:
     result = calculate(retail_mid_cents=1450000)
 """
 
-# Regal fee schedule (price ranges and fees in CAD dollars)
-# price_max is the upper bound of the range (exclusive)
+# Regal fee schedule as (price_low, price_high, fee) bands, all in CAD dollars.
+# A band matches when price_low <= price < price_high (high bound is exclusive).
 REGAL_FEE_SCHEDULE = [
     (0,       5_000,   285),
     (5_000,   10_000,  385),
@@ -23,8 +23,9 @@ REGAL_FEE_SCHEDULE = [
 
 GST_RATE = 0.05  # 5% Alberta GST on (purchase price + buyer fee)
 
-# Margin tiers: (sell_price_threshold_dollars, margin_dollars)
-# The tier is selected based on estimated retail sell price
+# Margin tiers as (sell_low, sell_high, margin, label), in CAD dollars.
+# The tier is selected from the estimated retail sell price using
+# sell_low <= price < sell_high (high bound is exclusive).
 MARGIN_TIERS = [
     (0,       15_000,  1_500,  "Tier 1 (<$15k sell)"),
     (15_000,  20_000,  2_500,  "Tier 2 ($15k–$20k sell)"),
@@ -38,7 +39,9 @@ def get_buyer_fee(price_dollars: float) -> int:
     for low, high, fee in REGAL_FEE_SCHEDULE:
         if low <= price_dollars < high:
             return fee
-    return 985  # fallback to highest tier
+    # Unreachable for non-negative prices (last band runs to infinity);
+    # fall back to the top band's fee as a safety net.
+    return REGAL_FEE_SCHEDULE[-1][2]
 
 
 def get_margin(retail_mid_dollars: float) -> tuple[int, str]:
@@ -46,30 +49,37 @@ def get_margin(retail_mid_dollars: float) -> tuple[int, str]:
     for low, high, margin, label in MARGIN_TIERS:
         if low <= retail_mid_dollars < high:
             return margin, label
-    return 5_000, "Tier 4 ($35k+ sell)"
+    # Unreachable for non-negative prices (last tier runs to infinity);
+    # fall back to the top tier as a safety net.
+    _, _, top_margin, top_label = MARGIN_TIERS[-1]
+    return top_margin, top_label
 
 
 def calculate_single(retail_mid_cents: int, margin_dollars: int) -> dict:
     """
     Calculate max bid for a single margin level.
 
+    The buyer fee depends on the bid price, which in turn depends on the fee,
+    so we solve it iteratively: seed the fee from a rough bid estimate, compute
+    a max bid, then refine the fee once against that max bid.
+
     Returns:
         {max_bid_cents, max_bid_dollars, buyer_fee, margin, gst_estimate, total_cost_at_max_bid}
     """
     retail_mid_dollars = retail_mid_cents / 100
 
-    # Buyer fee is based on the max bid price (iterative approximation)
-    # Since fee depends on bid price, we estimate: start with mid estimate
-    estimated_bid = max(retail_mid_dollars - margin_dollars - 700, 0)  # rough start
-    buyer_fee = get_buyer_fee(estimated_bid)
+    def max_bid_for_fee(fee: int) -> float:
+        """Solve the max-bid formula for a given buyer fee, floored at zero."""
+        bid = (retail_mid_dollars - margin_dollars - fee) / (1 + GST_RATE)
+        return max(bid, 0)
 
-    max_bid_dollars = (retail_mid_dollars - margin_dollars - buyer_fee) / (1 + GST_RATE)
-    max_bid_dollars = max(max_bid_dollars, 0)
+    # Seed the fee from a rough bid estimate (~$700 stands in for the fee).
+    rough_bid = max(retail_mid_dollars - margin_dollars - 700, 0)
+    buyer_fee = get_buyer_fee(rough_bid)
 
-    # Recalculate fee with refined bid
-    buyer_fee = get_buyer_fee(max_bid_dollars)
-    max_bid_dollars = (retail_mid_dollars - margin_dollars - buyer_fee) / (1 + GST_RATE)
-    max_bid_dollars = max(max_bid_dollars, 0)
+    # Refine the fee against the resulting max bid, then recompute the bid.
+    buyer_fee = get_buyer_fee(max_bid_for_fee(buyer_fee))
+    max_bid_dollars = max_bid_for_fee(buyer_fee)
 
     gst = (max_bid_dollars + buyer_fee) * GST_RATE
     total_cost = max_bid_dollars + buyer_fee + gst
@@ -92,6 +102,7 @@ def calculate(retail_mid_cents: int) -> dict:
         {
             retail_mid_dollars,
             default_margin, default_tier_label,
+            buyer_fee_at_mid,
             tier1, tier2, tier3, tier4   # each is a calculate_single result
         }
     """
@@ -99,8 +110,8 @@ def calculate(retail_mid_cents: int) -> dict:
     default_margin, default_tier_label = get_margin(retail_mid_dollars)
 
     tiers = {}
-    for i, (low, high, margin, label) in enumerate(MARGIN_TIERS, 1):
-        tiers[f"tier{i}"] = {
+    for tier_number, (_low, _high, margin, label) in enumerate(MARGIN_TIERS, start=1):
+        tiers[f"tier{tier_number}"] = {
             "label": label,
             "margin": margin,
             **calculate_single(retail_mid_cents, margin),
@@ -117,6 +128,7 @@ def calculate(retail_mid_cents: int) -> dict:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--retail", type=float, required=True, help="Retail mid price in dollars")
     args = parser.parse_args()
@@ -125,7 +137,8 @@ if __name__ == "__main__":
     print(f"\nRetail mid: ${result['retail_mid_dollars']:,.0f}")
     print(f"Default tier: {result['default_tier_label']}")
     print()
-    for i in range(1, 5):
-        t = result[f"tier{i}"]
-        print(f"  {t['label']}: max bid ${t['max_bid_dollars']:,.0f} "
-              f"(fee ${t['buyer_fee']}, margin ${t['margin']:,}, GST ${t['gst_estimate']:,.0f})")
+    for tier_number in range(1, 5):
+        tier = result[f"tier{tier_number}"]
+        print(f"  {tier['label']}: max bid ${tier['max_bid_dollars']:,.0f} "
+              f"(fee ${tier['buyer_fee']}, margin ${tier['margin']:,}, "
+              f"GST ${tier['gst_estimate']:,.0f})")

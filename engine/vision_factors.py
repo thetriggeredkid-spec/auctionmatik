@@ -40,28 +40,27 @@ def _is_truckish(vehicle: dict) -> bool:
 
 def _map_mod(mod_type: str, quality: str, vehicle: dict) -> str | None:
     """Map a free-text vision mod into an engine MOD_DELTAS key (or None if unpriced)."""
-    t = (mod_type or "").lower()
-    q = (quality or "unknown").lower()
-    pro = q == "professional"
-    if "lift" in t:
+    desc = (mod_type or "").lower()
+    is_pro = (quality or "unknown").lower() == "professional"
+    if "lift" in desc:
         return "lift_kit_truck" if _is_truckish(vehicle) else "lift_kit_car"
-    if "lower" in t:
+    if "lower" in desc:
         return "lowering_springs"
-    if "wheel" in t or "rim" in t:
-        return "aftermarket_wheels_quality" if pro else "aftermarket_wheels_cheap"
-    if "exhaust" in t:
+    if "wheel" in desc or "rim" in desc:
+        return "aftermarket_wheels_quality" if is_pro else "aftermarket_wheels_cheap"
+    if "exhaust" in desc:
         return "performance_exhaust"
-    if "tint" in t:
+    if "tint" in desc:
         return "window_tint"
-    if "running board" in t:
+    if "running board" in desc:
         return "running_boards_aftermarket"
-    if "tonneau" in t:
+    if "tonneau" in desc:
         return "tonneau_cover_aftermarket"
-    if "bumper" in t:
-        return "quality_aftermarket_bumper" if pro else "aftermarket_bumper"
-    if "intake" in t:
+    if "bumper" in desc:
+        return "quality_aftermarket_bumper" if is_pro else "aftermarket_bumper"
+    if "intake" in desc:
         return "performance_intake"
-    if "tune" in t or "ecu" in t:
+    if "tune" in desc or "ecu" in desc:
         return "ecu_tune"
     # light bar, winch, roof rack, fog lights, spare carrier, etc. — no priced delta
     return None
@@ -83,7 +82,8 @@ def vision_to_spec(va: dict, vehicle: dict | None = None) -> dict:
     if va.get("interior_grade") is not None:
         spec["interior_grade"] = int(va["interior_grade"])
 
-    # Damage items (visible panels) + rust as an underbody damage item
+    # Damage items (visible panels) + rust as a single underbody damage item.
+    # Unknown (damage_type, severity) pairs fall back to the "other" cost row.
     damage_items = []
     for d in va.get("damage_details") or []:
         dtype = (d.get("damage_type") or "other").lower()
@@ -96,11 +96,11 @@ def vision_to_spec(va: dict, vehicle: dict | None = None) -> dict:
             })
 
     rust = (va.get("rust_severity") or "unknown").lower()
-    r_low, r_high = RUST_COST.get(rust, (0, 0))
-    if r_high > 0:
+    rust_low, rust_high = RUST_COST.get(rust, (0, 0))
+    if rust_high > 0:
         damage_items.append({
             "type": "rust", "location": "body/underbody",
-            "repair_cost_low": r_low, "repair_cost_high": r_high,
+            "repair_cost_low": rust_low, "repair_cost_high": rust_high,
         })
     if damage_items:
         spec["damage_items"] = damage_items

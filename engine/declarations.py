@@ -70,28 +70,41 @@ REMARK_PATTERNS = [
 _MECHANICAL_SIGNALS = {"exhaust_leak", "check_engine", "mechanical_unspecified", "not_drivable", "freezing_damage"}
 
 
+def _is_claims_code(code: str) -> bool:
+    """True for a CH#### claims-total code (e.g. 'CH15000')."""
+    return code.startswith("CH") and re.search(r"\d", code) is not None
+
+
+def _claims_amount(code: str) -> int:
+    """Extract the dollar lower-bound from a CH#### code ('CH15000' -> 15000)."""
+    return int(re.sub(r"\D", "", code))
+
+
 def _parse_codes(declarations: str) -> list[dict]:
     """Split a declaration string ('MP;OOPBC' / 'CH15000' / 'FD;RS;UNX') into known codes."""
     if not declarations:
         return []
+    # Codes are separated by ';', ',' or '/'; normalise to upper-case tokens.
     tokens = [t.strip().upper() for t in re.split(r"[;,/]", declarations) if t.strip()]
-    out = []
-    for tok in tokens:
-        if tok.startswith("CH") and re.search(r"\d", tok):
-            num = int(re.sub(r"\D", "", tok))
-            out.append({"code": tok, "label": "Claims Total",
-                        "meaning": f"Cumulative insurance claims history (band starting ${num:,})."})
+    decoded = []
+    for token in tokens:
+        if _is_claims_code(token):
+            amount = _claims_amount(token)
+            decoded.append({"code": token, "label": "Claims Total",
+                            "meaning": f"Cumulative insurance claims history (band starting ${amount:,})."})
             continue
-        match = next((c for c in DECLARATION_CODES if tok.startswith(c[0])), None)
+        # Match by prefix so variants (e.g. OOPBC) resolve to their base code (OOP).
+        match = next((c for c in DECLARATION_CODES if token.startswith(c[0])), None)
         if match:
-            out.append({"code": tok, "label": match[1], "meaning": match[2]})
+            decoded.append({"code": token, "label": match[1], "meaning": match[2]})
         else:
-            out.append({"code": tok, "label": "Unrecognized code",
-                        "meaning": f"'{tok}' isn't in the declaration dictionary yet — verify it on the listing."})
-    return out
+            decoded.append({"code": token, "label": "Unrecognized code",
+                            "meaning": f"'{token}' isn't in the declaration dictionary yet — verify it on the listing."})
+    return decoded
 
 
 def _parse_remarks(notes: str) -> list[str]:
+    """Scan free-text condition notes for known keyword patterns, returning unique signal tags."""
     if not notes:
         return []
     text = notes.lower()
@@ -103,17 +116,21 @@ def _parse_remarks(notes: str) -> list[str]:
 
 
 def analyze_declarations(declarations: str = "", condition_notes: str = "") -> dict:
+    """Decode declaration codes and condition remarks into structured risk signals.
+
+    See the module docstring for the full shape of the returned dict.
+    """
     codes = _parse_codes(declarations)
     signals = _parse_remarks(condition_notes)
-    code_set = {c["code"] for c in codes}
 
     def has(prefix):
+        """True if any decoded code starts with `prefix` (prefix-match, like _parse_codes)."""
         return any(c["code"].startswith(prefix) for c in codes)
 
-    claims_low = None
-    for c in codes:
-        if c["code"].startswith("CH") and re.search(r"\d", c["code"]):
-            claims_low = int(re.sub(r"\D", "", c["code"]))
+    # Lower bound of the cumulative claims band. If multiple CH#### codes appear,
+    # the last one wins (matches the original scan order).
+    claims_amounts = [_claims_amount(c["code"]) for c in codes if _is_claims_code(c["code"])]
+    claims_low = claims_amounts[-1] if claims_amounts else None
 
     route_salvage = has("FD") or has("SALV") or has("NR") or "frame" in signals or "flood" in signals or "salvage" in signals
     rebuilt = has("RS")

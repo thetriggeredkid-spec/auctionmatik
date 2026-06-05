@@ -33,12 +33,13 @@ def _km_normalize(price: int, comp_km, subj_km) -> int:
     """Adjust a comp's price to the subject's mileage (more comp km ⇒ adjust price up)."""
     if not (price and comp_km and subj_km and subj_km > 0):
         return price
-    diff = max(-0.85, min(0.85, (comp_km - subj_km) / subj_km))
-    return int(price * (1 + diff * KM_SENSITIVITY))
+    # Fraction the comp is above/below the subject's mileage, clamped to ±85%.
+    km_diff_frac = max(-0.85, min(0.85, (comp_km - subj_km) / subj_km))
+    return int(price * (1 + km_diff_frac * KM_SENSITIVITY))
 
 
-# Days-on-market discount: a stale unsold listing means asking > market. TUNABLE.
 def _dom_discount(age_days: int | None) -> float:
+    """Days-on-market discount: a stale unsold listing means asking > market. TUNABLE."""
     if not age_days or age_days <= 21:
         return 0.0
     if age_days <= 45:
@@ -49,6 +50,7 @@ def _dom_discount(age_days: int | None) -> float:
         return 0.12
     return 0.18
 
+
 _REBUILT_KW = ("rebuilt", "rebuild", "salvage", "branded", "reconstructed", "rebuilt title")
 _ROUGH_KW = ("as is", "as-is", "needs work", "mechanic special", "project", "parts",
              "not running", "doesn't run", "rust hole", "needs tlc")
@@ -57,26 +59,30 @@ _CLEAN_KW = ("no accident", "no accidents", "clean title", "mint", "immaculate",
 
 
 def _text(comp: dict) -> str:
+    """Lowercased title + description + trim of a comp, for keyword matching."""
     return " ".join(str(comp.get(k) or "") for k in ("title", "description", "trim")).lower()
 
 
 def _title_status(comp: dict) -> str:
-    t = _text(comp)
-    if any(k in t for k in _REBUILT_KW):
+    """'rebuilt' if any rebuilt/salvage keyword appears, else 'clean'."""
+    text = _text(comp)
+    if any(kw in text for kw in _REBUILT_KW):
         return "rebuilt"
     return "clean"
 
 
 def _condition_hint(comp: dict) -> str:
-    t = _text(comp)
-    if any(k in t for k in _ROUGH_KW):
+    """'rough', 'clean', or 'unknown' based on condition keywords in the listing text."""
+    text = _text(comp)
+    if any(kw in text for kw in _ROUGH_KW):
         return "rough"
-    if any(k in t for k in _CLEAN_KW):
+    if any(kw in text for kw in _CLEAN_KW):
         return "clean"
     return "unknown"
 
 
 def _age_days(comp: dict) -> int | None:
+    """Days since the comp was posted, or None if there's no parseable post date."""
     posted = comp.get("posted_at")
     if not posted:
         return None
@@ -93,13 +99,13 @@ def _age_days(comp: dict) -> int | None:
 
 def _norm_cab(*texts) -> str | None:
     """Canonical truck cab ('crew' | 'ext' | 'reg') from any trim/title/description text."""
-    t = " ".join(str(x or "") for x in texts).upper()
-    if any(k in t for k in ("SUPERCREW", "CREW CAB", "CREWCAB", "CREWMAX", "CREW")):
+    text = " ".join(str(x or "") for x in texts).upper()
+    if any(kw in text for kw in ("SUPERCREW", "CREW CAB", "CREWCAB", "CREWMAX", "CREW")):
         return "crew"
-    if any(k in t for k in ("SUPERCAB", "SUPER CAB", "QUAD", "DOUBLE CAB", "KING CAB",
-                            "ACCESS CAB", "EXTENDED", "EXT CAB")):
+    if any(kw in text for kw in ("SUPERCAB", "SUPER CAB", "QUAD", "DOUBLE CAB", "KING CAB",
+                                 "ACCESS CAB", "EXTENDED", "EXT CAB")):
         return "ext"
-    if any(k in t for k in ("REGULAR CAB", "REG CAB", "SINGLE CAB", "STANDARD CAB", "STD CAB")):
+    if any(kw in text for kw in ("REGULAR CAB", "REG CAB", "SINGLE CAB", "STANDARD CAB", "STD CAB")):
         return "reg"
     return None
 
@@ -116,53 +122,67 @@ _TRIM_TOKENS = [
 
 
 def _trim_token(*texts) -> str | None:
-    t = " ".join(str(x or "") for x in texts).lower()
-    for tok in _TRIM_TOKENS:
-        if re.search(r"\b" + re.escape(tok) + r"\b", t):
-            return tok
+    """First matching trim token (whole-word) found across the given texts, else None."""
+    text = " ".join(str(x or "") for x in texts).lower()
+    for token in _TRIM_TOKENS:
+        if re.search(r"\b" + re.escape(token) + r"\b", text):
+            return token
     return None
 
 
 def _similarity(subject: dict, comp: dict) -> float:
+    """Comparability score in [0.05, 1.0]: km, year, cab, trim, and condition matches."""
     score = 0.5
-    s_km, c_km = subject.get("odometer_km"), comp.get("odometer_km")
-    if s_km and c_km and s_km > 0:
-        ratio = abs(s_km - c_km) / s_km
-        score += 0.25 if ratio < 0.10 else 0.12 if ratio < 0.25 else 0.0
-    s_yr, c_yr = subject.get("year"), comp.get("year")
-    if s_yr and c_yr:
-        d = abs(int(s_yr) - int(c_yr))
-        score += 0.15 if d == 0 else 0.08 if d == 1 else 0.0
+
+    subj_km, comp_km = subject.get("odometer_km"), comp.get("odometer_km")
+    if subj_km and comp_km and subj_km > 0:
+        km_ratio = abs(subj_km - comp_km) / subj_km
+        score += 0.25 if km_ratio < 0.10 else 0.12 if km_ratio < 0.25 else 0.0
+
+    subj_year, comp_year = subject.get("year"), comp.get("year")
+    if subj_year and comp_year:
+        year_gap = abs(int(subj_year) - int(comp_year))
+        score += 0.15 if year_gap == 0 else 0.08 if year_gap == 1 else 0.0
+
     # Truck cab match (when the subject is a known cab config) — crew vs reg are
     # different vehicles, so reward matches and penalize mismatches when detectable.
-    s_cab = subject.get("cab") or _norm_cab(subject.get("trim"), subject.get("style"))
-    if s_cab:
-        c_cab = _norm_cab(comp.get("trim"), comp.get("title"), comp.get("description"))
-        if c_cab:
-            score += 0.12 if (_norm_cab(s_cab) or s_cab) == c_cab else -0.18
+    subj_cab = subject.get("cab") or _norm_cab(subject.get("trim"), subject.get("style"))
+    if subj_cab:
+        comp_cab = _norm_cab(comp.get("trim"), comp.get("title"), comp.get("description"))
+        if comp_cab:
+            score += 0.12 if (_norm_cab(subj_cab) or subj_cab) == comp_cab else -0.18
 
     # Trim match — a Lariat anchored to XLT comps prices it badly low. Reward same
     # trim, penalize a different known trim.
-    s_trim = _trim_token(subject.get("trim"))
-    if s_trim:
-        c_trim = _trim_token(comp.get("trim"), comp.get("title"), comp.get("description"))
-        if c_trim:
-            score += 0.2 if c_trim == s_trim else -0.22
-    cond = _condition_hint(comp)
-    if cond == "rough":
+    subj_trim = _trim_token(subject.get("trim"))
+    if subj_trim:
+        comp_trim = _trim_token(comp.get("trim"), comp.get("title"), comp.get("description"))
+        if comp_trim:
+            score += 0.2 if comp_trim == subj_trim else -0.22
+
+    if _condition_hint(comp) == "rough":
         score -= 0.10        # less comparable to a clean resale (still informative as a floor)
+
     return max(0.05, min(score, 1.0))
 
 
 def _median(vals):
-    s = sorted(vals)
-    n = len(s)
-    return None if n == 0 else (s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) // 2)
+    """Integer median of vals (averaging the two middle values for even counts), or None."""
+    ordered = sorted(vals)
+    n = len(ordered)
+    if n == 0:
+        return None
+    if n % 2:
+        return ordered[n // 2]
+    return (ordered[n // 2 - 1] + ordered[n // 2]) // 2
 
 
 def scrutinize(subject: dict, comps: list[dict], top_n: int = 6) -> dict:
     clean, excluded, narrative = [], [], []
 
+    # 1. Reason about each comp: estimate its likely sale price (asking minus a
+    #    days-on-market discount) and score its comparability. Rebuilt/salvage
+    #    titles and priceless listings are excluded from the clean pool.
     for comp in comps:
         asking = comp.get("asking_price") or 0
         if asking <= 0:
@@ -170,11 +190,11 @@ def scrutinize(subject: dict, comps: list[dict], top_n: int = 6) -> dict:
             continue
         title = _title_status(comp)
         age = _age_days(comp)
-        disc = _dom_discount(age)
-        est_sale = int(asking * (1 - disc))
-        score = _similarity(subject, comp)
-        row = {**comp, "_title": title, "_age_days": age, "_dom_discount": disc,
-               "_est_sale": est_sale, "_score": score, "_condition": _condition_hint(comp),
+        discount = _dom_discount(age)
+        est_sale = int(asking * (1 - discount))
+        row = {**comp, "_title": title, "_age_days": age, "_dom_discount": discount,
+               "_est_sale": est_sale, "_score": _similarity(subject, comp),
+               "_condition": _condition_hint(comp),
                "_trim": _trim_token(comp.get("trim"), comp.get("title"), comp.get("description"))}
         if title == "rebuilt":
             row["_reason"] = "rebuilt/salvage title — not a clean comp"
@@ -182,41 +202,47 @@ def scrutinize(subject: dict, comps: list[dict], top_n: int = 6) -> dict:
         else:
             clean.append(row)
 
-    # Prefer comps that have odometer data — they're the only ones we can truly compare.
+    # 2. Prefer comps that have odometer data — they're the only ones we can truly
+    #    compare. Fall back to all clean comps if we don't have enough with km.
     with_km = [c for c in clean if c.get("odometer_km")]
     pool = with_km if len(with_km) >= 3 else clean
 
+    # 3. Normalize each comp's estimated sale price to the subject's mileage.
     subj_km = subject.get("odometer_km")
-    for r in pool:
-        r["_km_adj"] = _km_normalize(r["_est_sale"], r.get("odometer_km"), subj_km)
+    for row in pool:
+        row["_km_adj"] = _km_normalize(row["_est_sale"], row.get("odometer_km"), subj_km)
 
+    # 4. Keep the most comparable comps, then drop the cheapest/priciest as outliers
+    #    (rough units / wrong trims) once we have enough to spare.
     pool.sort(key=lambda r: r["_score"], reverse=True)
     top = pool[:top_n]
-
-    # Trim price outliers (rough units / wrong trims) once we have enough comps.
     if len(top) >= 5:
         by_price = sorted(top, key=lambda r: r["_km_adj"])
         top = by_price[1:-1]
 
-    # similarity-weighted estimate from the best, km-normalized clean comps
+    # 5. Anchor = similarity-weighted average of the km-normalized clean comps
+    #    (falling back to the median if every weight is zero).
     anchor = None
     if top:
-        wsum = sum(r["_score"] for r in top)
-        anchor = int(sum(r["_km_adj"] * r["_score"] for r in top) / wsum) if wsum \
-            else _median([r["_km_adj"] for r in top])
+        weight_sum = sum(r["_score"] for r in top)
+        if weight_sum:
+            anchor = int(sum(r["_km_adj"] * r["_score"] for r in top) / weight_sum)
+        else:
+            anchor = _median([r["_km_adj"] for r in top])
 
-    n = len(top)
-    confidence = "high" if n >= 5 else "medium" if n >= 3 else "low"
+    n_top = len(top)
+    confidence = "high" if n_top >= 5 else "medium" if n_top >= 3 else "low"
 
-    for r in (top + excluded):
-        km = f"{r.get('odometer_km'):,}km" if r.get("odometer_km") else "km?"
-        age = f"{r['_age_days']}d" if r.get("_age_days") is not None else "age?"
-        disc = f"−{int(r['_dom_discount']*100)}%" if r.get("_dom_discount") else "—"
-        adj = r.get("_km_adj", r["_est_sale"])
-        tag = r.get("_reason", f"score {r['_score']:.2f}")
+    # 6. One human-readable line per comp used or excluded.
+    for row in (top + excluded):
+        km = f"{row.get('odometer_km'):,}km" if row.get("odometer_km") else "km?"
+        age = f"{row['_age_days']}d" if row.get("_age_days") is not None else "age?"
+        discount = f"−{int(row['_dom_discount']*100)}%" if row.get("_dom_discount") else "—"
+        km_adj = row.get("_km_adj", row["_est_sale"])
+        tag = row.get("_reason", f"score {row['_score']:.2f}")
         narrative.append(
-            f"{r.get('year')} {r.get('make')} {r.get('model')} {((r.get('_trim') or '').upper())} | {km} | ask ${ (r.get('asking_price') or 0)/100:,.0f}"
-            f" | listed {age} {disc} → est ${r['_est_sale']/100:,.0f} → km-adj ${adj/100:,.0f} | {r.get('_condition')} | {tag}"
+            f"{row.get('year')} {row.get('make')} {row.get('model')} {((row.get('_trim') or '').upper())} | {km} | ask ${ (row.get('asking_price') or 0)/100:,.0f}"
+            f" | listed {age} {discount} → est ${row['_est_sale']/100:,.0f} → km-adj ${km_adj/100:,.0f} | {row.get('_condition')} | {tag}"
         )
 
     return {"anchor": anchor, "confidence": confidence,

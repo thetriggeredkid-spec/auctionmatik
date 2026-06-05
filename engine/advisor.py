@@ -40,20 +40,24 @@ def _margin(profile: dict, sale_dollars: float) -> int:
 def _max_bid_cents(expected_sale_cents: int, deductions_cents: int, profile: dict) -> dict:
     """max_bid = (sale − recon/repair − margin − buyer_fee) / 1.05 ; floored at 0."""
     sale = expected_sale_cents / 100
+    deductions = deductions_cents / 100
     margin = _margin(profile, sale)
-    # fee depends on bid price — quick two-pass estimate like max_bid.calculate_single
-    est = max(sale - deductions_cents / 100 - margin - 700, 0)
-    fee = get_buyer_fee(est)
-    bid = (sale - deductions_cents / 100 - margin - fee) / (1 + GST_RATE)
-    bid = max(bid, 0)
+    net = sale - deductions - margin  # proceeds before buyer fee + GST
+
+    # Buyer fee depends on the bid price, so iterate like max_bid.calculate_single:
+    # seed the fee from a rough bid, then recompute once it converges.
+    seed_bid = max(net - 700, 0)
+    fee = get_buyer_fee(seed_bid)
+    bid = max((net - fee) / (1 + GST_RATE), 0)
     fee = get_buyer_fee(bid)
-    bid = max((sale - deductions_cents / 100 - margin - fee) / (1 + GST_RATE), 0)
+    bid = max((net - fee) / (1 + GST_RATE), 0)
     return {"max_bid_cents": int(bid * 100), "margin": margin, "buyer_fee": fee}
 
 
 def _recon_plan(anchor_cents: int, decl: dict, vision: dict, profile: dict) -> dict:
     """Decide which work to do (ROI) and the held-back reserve. Returns plan + total cost."""
     anchor = anchor_cents / 100
+    repair_cfg = profile["repair"]
     items = []
     cost_cents = 0
 
@@ -66,21 +70,22 @@ def _recon_plan(anchor_cents: int, decl: dict, vision: dict, profile: dict) -> d
                       "decision": "RESERVE", "why": "Unspecified mechanical risk — hold this back from your bid."})
         cost_cents += mech_reserve * 100
 
-    # Cosmetic recon from vision damage — ROI gated by vehicle value
-    rc = profile["repair"]
-    dmg = (vision or {}).get("damage_details") or []
-    if dmg:
+    # Cosmetic recon from vision damage — only do it if the value tier justifies the ROI.
+    damage = (vision or {}).get("damage_details") or []
+    if damage:
         cosmetic = estimate_repair(
-            [{"component": d.get("panel", ""), "action": "repair", "severity": d.get("severity")} for d in dmg],
-            buffer=profile["repair_buffer"], small_factor=rc["small_factor"], large_factor=rc["large_factor"])
-        c_mid = (cosmetic["total_low"] + cosmetic["total_high"]) // 2
+            [{"component": d.get("panel", ""), "action": "repair", "severity": d.get("severity")} for d in damage],
+            buffer=profile["repair_buffer"],
+            small_factor=repair_cfg["small_factor"], large_factor=repair_cfg["large_factor"])
+        cosmetic_mid = (cosmetic["total_low"] + cosmetic["total_high"]) // 2
+        work_label = f"Cosmetic repairs ({len(damage)} item/s)"
         if anchor < LOW_VALUE_THRESHOLD:
-            items.append({"work": f"Cosmetic repairs ({len(dmg)} item/s)", "cost": c_mid,
+            items.append({"work": work_label, "cost": cosmetic_mid,
                           "decision": "SKIP", "why": "Low-value unit — sell as-is; repairs won't return their cost."})
         else:
-            items.append({"work": f"Cosmetic repairs ({len(dmg)} item/s)", "cost": c_mid,
+            items.append({"work": work_label, "cost": cosmetic_mid,
                           "decision": "DO", "why": "Worth it on this value tier for saleability/curb appeal."})
-            cost_cents += c_mid * 100
+            cost_cents += cosmetic_mid * 100
 
     return {"items": items, "cost_cents": cost_cents, "mechanical_reserve": mech_reserve}
 
@@ -107,34 +112,43 @@ def _history_deduction(decl: dict, carfax: dict | None, value_cents: int) -> tup
     """Dollar deduction (cents) for accident/claims history. Carfax (precise) overrides the
     CH claims-total band. Applied to the CLEAN value so we don't double-count the comp anchor."""
     value = max(value_cents / 100, 1)
+
+    # Prefer a precise Carfax claim total; otherwise fall back to the CH declaration band.
     claim = None
     if carfax and carfax.get("total_claims_cad"):
         claim = carfax["total_claims_cad"]
     elif decl.get("claims_total_low"):
         claim = decl["claims_total_low"] + 2500   # CH band midpoint (e.g. CH15000 → ~$17.5k)
+
+    # No dollar claim figure: deduct per Carfax accident count if we have one.
     if claim is None:
         if carfax and carfax.get("accidents_reported"):
-            acc = carfax["accidents_reported"]
-            ded = min(_value_cap(value) * value, 1500 * acc)
-            return int(ded * 100), f"Carfax: {acc} accident(s)"
+            accidents = carfax["accidents_reported"]
+            deduction = min(_value_cap(value) * value, 1500 * accidents)
+            return int(deduction * 100), f"Carfax: {accidents} accident(s)"
         return 0, ""
-    frac = _claim_fraction(value)
+
+    # Deduct a value-scaled fraction of the claim, capped at a % of vehicle value.
+    fraction = _claim_fraction(value)
     cap = _value_cap(value) * value
-    ded = min(claim * frac, cap)
-    capped = ded >= cap
-    return int(ded * 100), (f"claim ~${claim:,.0f} × {int(frac * 100)}% (cheaper-car-scaled)"
-                            + (f", capped at {int(_value_cap(value) * 100)}% of value" if capped else ""))
+    deduction = min(claim * fraction, cap)
+    is_capped = deduction >= cap
+    reason = f"claim ~${claim:,.0f} × {int(fraction * 100)}% (cheaper-car-scaled)"
+    if is_capped:
+        reason += f", capped at {int(_value_cap(value) * 100)}% of value"
+    return int(deduction * 100), reason
 
 
 def advise(subject: dict, *, anchor_cents: int, clean_value_cents: int | None,
            decl: dict, vision: dict, carfax: dict | None = None,
            profile_key: str = "charles") -> dict:
     profile = PROFILES[profile_key]
-    rc = profile["repair"]
+    repair_cfg = profile["repair"]
     # Repair quote is profile-aware: used-parts/DIY profiles price the big jobs cheaper.
     repair_est = estimate_repair((vision or {}).get("repair_components") or [],
                                  buffer=profile["repair_buffer"],
-                                 small_factor=rc["small_factor"], large_factor=rc["large_factor"])
+                                 small_factor=repair_cfg["small_factor"],
+                                 large_factor=repair_cfg["large_factor"])
     clean_value_cents = clean_value_cents or anchor_cents
     mode = route_mode(decl, vision, repair_est, clean_value_cents)
     verify = list(decl.get("verify_before_bid") or [])
@@ -174,15 +188,20 @@ def advise(subject: dict, *, anchor_cents: int, clean_value_cents: int | None,
                   f"Regal fee ${mb['buyer_fee']:,} & 5% GST "
                   f"⇒ bid ≤ ${max_bid/100:,.0f}.")
 
-    # Profit projection (rough)
-    fee = get_buyer_fee(max_bid / 100)
-    gst = (max_bid / 100 + fee) * GST_RATE
-    projected_net = expected_sale / 100 - max_bid / 100 - fee - gst - recon["cost_cents"] / 100
+    # Profit projection (rough): sale − bid − buyer fee − GST − recon costs.
+    bid_dollars = max_bid / 100
+    fee = get_buyer_fee(bid_dollars)
+    gst = (bid_dollars + fee) * GST_RATE
+    projected_net = expected_sale / 100 - bid_dollars - fee - gst - recon["cost_cents"] / 100
 
-    # Sale plan
+    # Sale plan: drivable retail-grade units sell retail; everything else wholesales.
     drivable = "not_drivable" not in (decl.get("remark_signals") or [])
-    channel = "Retail (FB/Kijiji)" if (mode == "A" and expected_sale / 100 >= LOW_VALUE_THRESHOLD and drivable) \
-        else "Wholesale / quick flip" if mode == "A" else "Sell repaired retail, or wholesale as-is to a rebuilder"
+    if mode == "A" and expected_sale / 100 >= LOW_VALUE_THRESHOLD and drivable:
+        channel = "Retail (FB/Kijiji)"
+    elif mode == "A":
+        channel = "Wholesale / quick flip"
+    else:
+        channel = "Sell repaired retail, or wholesale as-is to a rebuilder"
     list_price = int(expected_sale * 1.05)
     floor_price = int(expected_sale * 0.92)
 
@@ -204,25 +223,32 @@ def advise(subject: dict, *, anchor_cents: int, clean_value_cents: int | None,
 
 
 def render(advice: dict) -> str:
-    d = advice
-    L = []
-    L.append(f"VERDICT:   {d['verdict']}   |   YOUR MAX BID: ${d['max_bid_cents']/100:,.0f}   "
-             f"[{d['profile']}, Mode {d['mode']}]")
-    L.append(f"THESIS:    {d['thesis']}")
-    h = d.get("history") or {}
-    if h.get("deduction_cents"):
-        L.append(f"HISTORY:   −${h['deduction_cents'] / 100:,.0f} — {h['reason']}")
-    if d["verify_before_bid"]:
-        L.append("\n⚠ VERIFY BEFORE BIDDING")
-        for v in d["verify_before_bid"]:
-            L.append(f"   - {v}")
-    L.append("\n🔧 RECON PLAN")
-    for it in d["recon"]["items"]:
-        L.append(f"   [{it['decision']:8}] ${it['cost']:>6,}  {it['work']} — {it['why']}")
-    sp = d["sale_plan"]
-    L.append("\n💰 SALE PLAN")
-    L.append(f"   channel: {sp['channel']}")
-    L.append(f"   list at ${sp['list_price_cents']/100:,.0f}, floor ${sp['floor_price_cents']/100:,.0f}"
-             + (f"  ({sp['hold_note']})" if sp['hold_note'] else ""))
-    L.append(f"\n📈 PROJECTED NET (rough): ${d['projected_net']:,}")
-    return "\n".join(L)
+    """Format an advise() result as a human-readable, multi-line report."""
+    lines = [
+        f"VERDICT:   {advice['verdict']}   |   YOUR MAX BID: ${advice['max_bid_cents']/100:,.0f}   "
+        f"[{advice['profile']}, Mode {advice['mode']}]",
+        f"THESIS:    {advice['thesis']}",
+    ]
+
+    history = advice.get("history") or {}
+    if history.get("deduction_cents"):
+        lines.append(f"HISTORY:   −${history['deduction_cents'] / 100:,.0f} — {history['reason']}")
+
+    if advice["verify_before_bid"]:
+        lines.append("\n⚠ VERIFY BEFORE BIDDING")
+        for item in advice["verify_before_bid"]:
+            lines.append(f"   - {item}")
+
+    lines.append("\n🔧 RECON PLAN")
+    for item in advice["recon"]["items"]:
+        lines.append(f"   [{item['decision']:8}] ${item['cost']:>6,}  {item['work']} — {item['why']}")
+
+    sale_plan = advice["sale_plan"]
+    lines.append("\n💰 SALE PLAN")
+    lines.append(f"   channel: {sale_plan['channel']}")
+    lines.append(f"   list at ${sale_plan['list_price_cents']/100:,.0f}, "
+                 f"floor ${sale_plan['floor_price_cents']/100:,.0f}"
+                 + (f"  ({sale_plan['hold_note']})" if sale_plan['hold_note'] else ""))
+
+    lines.append(f"\n📈 PROJECTED NET (rough): ${advice['projected_net']:,}")
+    return "\n".join(lines)
