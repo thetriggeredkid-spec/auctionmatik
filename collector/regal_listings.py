@@ -15,12 +15,12 @@ import json
 import time
 import argparse
 import requests
-from datetime import datetime
+from datetime import datetime, date
 
 sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.dirname(__file__)))
 from db.connection import get_conn, get_cursor
 
-BASE_URL = "https://regalauctions.com/inventory/"
+BASE_URL = "https://regalauctions.com/inventory.php"
 VEHICLE_TYPES = ["Car", "Truck", "Sport Utility", "Van"]
 PAGE_SIZE = 100
 DELAY_SECONDS = 0.5
@@ -87,15 +87,38 @@ def parse_trim_and_body(qamodel: str, model: str) -> tuple[str | None, str | Non
     return (trim if trim else None), body_style
 
 
+def parse_auction_date(raw: str) -> str | None:
+    """Parse Regal's sale_date formats: '2026-05-28', 'Jun 6th', '', '3000-01-01'."""
+    if not raw or raw.strip() == "" or raw == "3000-01-01":
+        return None
+    raw = raw.strip()
+    # Already ISO format
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
+        return raw
+    # Ordinal format: "Jun 6th", "Jun 2nd", etc.
+    clean = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", raw)  # strip ordinal suffix
+    for fmt in ("%b %d", "%B %d"):
+        try:
+            parsed = datetime.strptime(clean, fmt)
+            year = date.today().year
+            # If the parsed month is already past this year, assume next year
+            candidate = parsed.replace(year=year)
+            if candidate.date() < date.today():
+                candidate = parsed.replace(year=year + 1)
+            return candidate.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
 def upsert_record(conn, cursor, record: dict):
     trim, body_style = parse_trim_and_body(
         record.get("qamodel", ""), record.get("model", "")
     )
 
-    # Try to extract auction date from record fields
-    auction_date = record.get("auction_date") or record.get("sale_date") or None
-    if auction_date == "":
-        auction_date = None
+    auction_date = parse_auction_date(
+        record.get("sale_date") or record.get("auction_date") or ""
+    )
 
     cursor.execute("""
         INSERT INTO regal_listings (
