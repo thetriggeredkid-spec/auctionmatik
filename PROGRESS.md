@@ -1,77 +1,129 @@
 # Auctionmatik — Build Progress
 
-## Phase 1: Data Foundation ✅ COMPLETE
+> Quick orientation for a fresh context window. See `CLAUDE.md` for architecture,
+> `dashboard/README.md` for the UI, `VALUATION_METHODOLOGY.md` for the spec.
 
-### Step 1: Data Sourcing — Regal Auctions ✅
-- Primary source: Regal Auctions sold market report + active listings API
-- Storage: Postgres 16 (Docker), JSONB raw_json preserved
-- Schema: regal_sold, regal_listings, valuations
-
-### Step 2: Methodology Codification ✅
-- VALUATION_METHODOLOGY.md complete — 6 factor categories, delta model, max bid formula
-
-### Step 3: Collectors ✅
-- `collector/regal_market.py` — paginates sold records, upserts to regal_sold
-- `collector/regal_listings.py` — paginates active listings, upserts to regal_listings (built)
-
-### Step 4: Valuation Engine ✅ COMPLETE
-All modules built and syntax-verified. Max bid calculation validated against methodology doc example ($11,871 Wrangler case — exact match).
-
-**`engine/comps.py`** — comp pool builder
-- Primary match: year ±2, same make/model/driveline
-- Fallback: year ±3, model-only
-- Recency weighting: 30d = 3x, 90d = 1.5x, older = 1x
-- Similarity scoring: trim match, year proximity, mileage proximity
-- Returns: base_median (weighted), comp_count, confidence, odometer percentiles
-
-**`engine/factors/mileage.py`** — mileage band vs. comp pool percentiles
-- Bands: very_low (+8%), low (+3.5%), average (0%), high (-6%), very_high (-12%)
-
-**`engine/factors/condition.py`** — grades 1–5 + damage items
-- Exterior/Interior/Mechanical grade deltas vs. grade 3 baseline
-- Damage deducted at 1.35x midpoint repair cost (buyer hassle premium)
-
-**`engine/factors/history.py`** — accident claims, rebuilt title, service records, odometer integrity
-- Claim deduction: ~41.7% of claim amount
-- Near-total-loss (≥70% of vehicle value at time): compresses ceiling 25%, sets hard_to_sell
-- Rebuilt title: -25%
-
-**`engine/factors/options.py`** — options lookup table + mod tolerance by vehicle type
-- 25 option types, capped at +12% total
-- Mod tolerance: high (Wrangler) → very_low (luxury)
-
-**`engine/factors/market_context.py`** — supply dynamics, seller urgency, days-on-market
-- Supply bands, Finance Repo signal, dealer-at-auction signal
-- DOM penalty: -0.2%/day after 14 days
-
-**`engine/factors/location.py`** — Alberta-specific premiums
-- 4WD/AWD: +3%, Diesel truck: +10%, Rust-free: +2%
-
-**`engine/valuator.py`** — orchestrator
-- Multiplies all factor deltas: adjusted = base × ∏(1 + δᵢ)
-- Retail range: mid ±8% (±15% if low confidence)
-- Wholesale: retail_mid × 0.82 ±5%
-- Logs to valuations table
-
-**`engine/max_bid.py`** — Regal fee schedule + GST
-- Fee schedule: $285/$385/$535/$685/$835/$985 by price band
-- 4 margin tiers, formula: (retail_mid − margin − fee) / 1.05
-
-**`evaluate.py`** — main CLI
-- `python3 evaluate.py --contract 37316`
-- Fetches from DB or live API, prompts for condition, prints full report
+## Where we are
+A working **AI-primary valuation engine** with a **web dashboard** over Regal Auctions. You can
+screen an upcoming sale, open any vehicle, and get verdict + retail value + max bid with full
+reasoning, plus a human-in-the-loop training loop. Decent starting ground; calibrating from here.
 
 ---
 
-## Next Actions
-1. Run `docker compose up -d` to start Postgres
-2. Run `python3 -m collector.regal_market --type Car --pages 3` to test collector
-3. Run full backfill: `python3 -m collector.regal_market`
-4. Run `python3 -m collector.regal_listings` to populate active listings
-5. Test end-to-end: `python3 evaluate.py --contract <CONTRACT_NUMBER>`
+## Phase 1 — Deterministic foundation ✅
+- Postgres (Docker, **port 5433**); `regal_sold`, `regal_listings`, `valuations`.
+- Collectors: `regal_market.py` (sold), `regal_listings.py` (active, parses lot + sale_date).
+- Factor engine: `engine/comps.py`, `factors/*`, `valuator.py`, `max_bid.py`.
 
-## Phase 2: Refinement (future)
-- Outcome tracking: fill actual_sale_price after auction results
-- Factor weight calibration from outcome data (1,000+ transactions)
-- Seasonal adjustments (12+ months of data)
-- Vision model: damage detection from photos
+## Phase 2 — AI-primary hybrid + richer evidence ✅
+- **`engine/appraiser.py`** — Sonnet 4.6 brain; triage + deep (agentic, tools, playbook). Rules
+  engine is the sanity band. Speed funnel tuned (~7s triage, ~50–90s deep).
+- **`engine/advisor.py`** — deterministic verdict/max-bid, two buyer profiles (charles, mechanic).
+- **`engine/comp_scrutiny.py`** — per-comp reasoning over retail listings (km-norm, DOM discount,
+  title exclusion, cab-aware).
+- **`engine/declarations.py`** — Regal code decoder (FD/RS/MP/HD/CH####/TI/OOP/UNX/FR…).
+- **`engine/valuation_modes.py`** — Mode A (retail flip) vs Mode B (repair project).
+- **`engine/repair_estimate.py`** — profile-aware repair sourcing + buffer.
+- **`engine/vision.py` / `vision_factors.py`** — Haiku/Sonnet photo assessment → spec.
+- **`collector/retail_comps.py`** — FB Marketplace + Kijiji via Apify → `retail_listings`.
+- Validated on Jeep 37316 (BID ~$14k/$11k), Pathfinder (PASS+conditional), Equinox (BID-TO-FIX).
+
+## Phase 3 — Dashboard + feedback loop + Carfax ✅
+- **`dashboard/`** — Flask + React-over-Babel hi-fi UI (recreated from the Claude Design handoff
+  "Auctionmatic Detail.html"). `server.py` + `mapper.py` (glue, reuses `evaluate.py`).
+- **The Lane** — structured like Regal: upcoming **Tuesday Timed Auctions** + **Saturday Super
+  Sales** only, one sale at a time, **lot order**, deterministic screening (cached).
+- **Verdict Card** — photo gallery, verdict hero, max-bid waterfall, AI-vs-rules line, all panels.
+- **Comps tab** — retail comps with photo + link; **⚑ flag bad comps** → excluded forever.
+- **Past Sales tab** — actual `regal_sold` results for similar units, with Regal links.
+- **Carfax** — working link + manual entry + **⟳ Auto-pull** (`collector/carfax_agent.py`,
+  local Playwright + vision); **deep auto-pulls** when missing. Verified locally end-to-end.
+- **Correct tab** + `listing_feedback`/`comp_feedback` tables — record actual sale + the right call;
+  corrections feed the AI as **calibration**; flagged comps drop from anchors. (`db/migrate_feedback.sql`)
+- Truck spec (trim/cab/bed/engine) recovered from `raw_json` and used in comps + AI.
+
+---
+
+## How to run
+```bash
+docker compose up -d
+source venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium                 # for local Carfax auto-pull (uses your Chrome)
+python3 -m dashboard.server                 # → http://127.0.0.1:8080
+# CLI still works: python3 evaluate.py --contract 37316 --deep
+```
+Keep data fresh: `python3 -m collector.regal_listings` (lane), `regal_market` (sold comps),
+`retail_comps --query "<make model>"` (retail anchors), `regal_enrich` (photos/carfax_url).
+
+Backups: `./scripts/backup_db.sh` (gzipped `pg_dump` → `backups/`, keeps last 14; `KEEP=N` to change).
+Restore: `./scripts/restore_db.sh [file]` (defaults to newest). `backups/` is gitignored (holds data).
+DB is local Docker Postgres (32 MB, ~12.5k rows) — fine for now; revisit hosted (Supabase/Neon) only
+when building the Chrome extension or needing off-Mac / multi-user access.
+
+## Current direction / next actions
+1. **Calibrate from the sale** — use the Correct tab on real outcomes; flag bad comps; mine
+   `listing_feedback` for recurring patterns → turn into framework fixes.
+2. **Vision on comps** (proposed) — auto-assess each comp's photos to catch damaged comps the way
+   flagging does manually (the deeper fix for comp misreads).
+3. **Carfax on a server** — current local agent works; the planned **Chrome extension** version
+   sidesteps reCAPTCHA. (Hybrid worker / managed scraping browser are the server-side options.)
+4. Optional: collector to store trim/body columns on scrape; per-vehicle "Load photos" enrichment;
+   concurrency-safe lane screening; Settings/profile editor.
+
+### Done (post-QA, June)
+- **Deep-run streaming** — SSE `/api/evaluate_stream`; live stage checklist + elapsed timer on the
+  card (comp screening → Carfax → photos → VMR → AI appraising + its tool calls).
+- **Editable inputs + re-appraise** (A1) — the **Inputs** tab edits trim/cab/bed/driveline/engine/km,
+  condition grades, declarations & remarks; persisted per contract (`listing_overrides`,
+  `db/migrate_overrides.sql`), applied on every eval (lane + deep), with Reset-to-scraped.
+- **Calibration dashboard** (C6) — top-bar **◎ calibration** view: engine vs reality from recorded
+  corrections (`listing_feedback`). Retail-value & max-bid MAE + signed bias, verdict accuracy,
+  bias **by make** and **by price band**, a per-sample table (click → open card), CSV export
+  (`/api/calibration`, `/api/calibration.csv`). Use it to find systematic error for the methodology rewrite.
+- **Prep-this-sale** (B4) — lane **⚙ Prep sale** runs a bounded, idempotent background batch
+  (photos+vision default; Carfax/comps opt-in) over the first N by lot, with live progress + cancel.
+- **Settings / profile editor** — top-bar **⚙ settings** view: editable **buyer profiles**
+  (add/rename/remove), **margin tiers**, **Regal fee schedule**, **GST**, and **engine toggles**
+  (deep auto-Carfax/vision, vision cap, prep default). Stored as overrides on hardcoded defaults
+  (`app_settings`, `db/migrate_settings.sql`, `engine/settings.py`); applied live to advisor +
+  max_bid + vision on save/startup; the AI playbook gets the live tiers/fees/GST injected so its
+  reasoning matches the rules engine. Reset-to-defaults supported. Profile toggle is now dynamic.
+
+### Done — Overnight batch-deep automation (June)
+- **Persisted deep cache** (`deep_cache`, `db/migrate_deep_cache.sql`) keyed by (contract, profile)
+  with an **inputs-hash** (overrides/declarations/km/spec/carfax/vision presence/settings version).
+  `evaluate(ai_mode="deep")` serves a fresh cached result instantly; stores after computing.
+- **Invalidation**: editing inputs / carfax / vision / flagging a comp drops that contract's deep
+  cache; a settings change clears all.
+- **`collector/screen_sale.py`** — sequential, resumable batch CLI: `--date|--next`, triage→deep
+  filter (deep only BID/BID-TO-FIX/needs-deep) or `--all-deep`, `--comps`, `--max-deep`, `--force`,
+  `--dry-run`. Applies saved settings; logs to `screen_runs`; bumped SDK retries + inter-call delay.
+- **`scripts/overnight_screen.sh`** — backup → `caffeinate` → screen the next sale (cron/launchd).
+- **Lane "deep ✓"** badge on pre-screened rows; deep stream short-circuits to the cached result.
+- Verified end-to-end: 1-car deep run cached a 13.5KB payload (63.7s/$0.04), re-served in 0.00s,
+  invalidated correctly on override.
+
+**NOT scheduled yet (intentionally).** The batch runs only when invoked manually
+(`python3 -m collector.screen_sale --next --dry-run`). Hold off on a cron/launchd
+schedule until the valuation methodology is refined — then add the cron line in
+`scripts/overnight_screen.sh`'s header.
+
+### From QA pass (June, deferred — bigger items)
+- **Triage under/over-fit flag** on the lane (low comp SIM / uncertain trim) so users know which
+   rows are worth a deep run (the deep-mode trim catch is currently hidden behind a ~75s wait).
+- **Deep-run streaming/progress** (already listed) + comp-flag **undo + "anchor recalculated" toast**.
+- **Declaration glossary** expansion (codes like `AA` still resolve to "unrecognized" — needs Charles's
+   meanings) + a lane-level **verdict-vs-VMR-vs-PastSales divergence** column to spot outliers.
+- **Photo coverage** — many listings only have the cover; richer enrichment / fallback image.
+
+### Fixed in QA pass (June)
+Moved project out of ~/Downloads (macOS TCC was blocking all file reads → 500s); hardened `/` to
+serve from memory; re-price handlers now merge the full vehicle (no stale summary after flag/carfax/
+vision/profile change); thesis sentence now includes Regal fee + GST; PASS waterfall shows a clean
+"Below viable bid → PASS" instead of a positive "risk haircut"; Verify tab hidden when empty; lot
+placeholders (NOTSET/RXXX) hidden; unrecognized declaration codes labelled cleanly; deep-banner
+estimate corrected to ~60–90s; comp-flag now shows a re-pricing banner.
+
+## Known reference case
+2015 Jeep Wrangler, contract 37316 — Charles: retail ~$14,500, max bid ~$12,300. Validate against it.
