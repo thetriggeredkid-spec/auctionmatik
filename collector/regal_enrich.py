@@ -157,6 +157,29 @@ def _extract_condition_detail(html: str) -> dict:
 
 # ── Carfax URL ───────────────────────────────────────────────────────────────
 
+def _extract_remarks(html: str) -> str | None:
+    """Pull the condition-report REMARKS from the detail page: the bold auctioneer
+    announcement + the <pre> condition writeup (engine/lights/body/glass/tires). This is
+    the text the API's sparse `other` field usually omits."""
+    m = re.search(r"REMARKS:.*?<!--\s*END OF REMARKS", html, re.S | re.I)
+    if not m:
+        return None
+    block = m.group(0)
+    parts = []
+    bold = re.search(r"font-weight:\s*bold[^>]*>(.*?)</div>", block, re.S | re.I)
+    if bold:
+        ann = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", bold.group(1))).strip()
+        if ann:
+            parts.append(ann)
+    pre = re.search(r"<pre>(.*?)</pre>", block, re.S | re.I)
+    if pre:
+        desc = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", pre.group(1))).strip()
+        if desc:
+            parts.append(desc)
+    text = " ".join(parts).strip()
+    return text or None
+
+
 def _build_carfax_url(regal_id: str, vin: str) -> str | None:
     """Construct Regal's Carfax redirect URL from regal_id and VIN."""
     if not vin or not regal_id:
@@ -191,6 +214,7 @@ def _update_record(conn, cursor, regal_id: str, table: str, enrichment: dict):
             heat_map_damage  = %s,
             condition_detail = %s,
             carfax_url       = %s,
+            remarks          = COALESCE(%s, remarks),
             enriched_at      = NOW()
         WHERE regal_id = %s
     """, (
@@ -200,6 +224,7 @@ def _update_record(conn, cursor, regal_id: str, table: str, enrichment: dict):
         json.dumps(enrichment["heat_map_damage"]) if enrichment["heat_map_damage"] else None,
         json.dumps(enrichment["condition_detail"]) if enrichment["condition_detail"] else None,
         enrichment["carfax_url"],
+        enrichment.get("remarks"),
         regal_id,
     ))
     conn.commit()
@@ -239,12 +264,14 @@ def enrich_one(regal_id: str, vin: str = None, table: str = "regal_sold", conn=N
     heat_map = _extract_heat_map(html)
     condition = _extract_condition_detail(html)
     carfax_url = _extract_carfax_url(html, regal_id, vin or "")
+    remarks = _extract_remarks(html)
 
     enrichment = {
         "photo_urls":      photo_urls,
         "heat_map_damage": heat_map,
         "condition_detail": condition,
         "carfax_url":      carfax_url,
+        "remarks":         remarks,
     }
 
     if conn:

@@ -182,7 +182,8 @@ def parse_listing_to_vehicle(rec: dict) -> dict:
         "seller_type":   rec.get("seller_type"),
         "declarations":  rec.get("declarations"),
         "options_text":  rec.get("options") or rec.get("options_text"),
-        "condition_notes": rec.get("other") or rec.get("condition_notes"),
+        # prefer the full scraped condition-report remarks over the sparse API `other`
+        "condition_notes": rec.get("remarks") or rec.get("other") or rec.get("condition_notes"),
         "vin":           rec.get("vin"),
         "contract":      rec.get("contract"),
         "source_id":     rec.get("id", 0),

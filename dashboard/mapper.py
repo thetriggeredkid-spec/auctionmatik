@@ -488,6 +488,7 @@ def _inputs_hash(conn, contract: str, profile: str, vehicle: dict, overrides: di
         "profile": profile,
         "ov": overrides or {},
         "decl": vehicle.get("declarations"),
+        "notes": vehicle.get("condition_notes"),   # scraped remarks → re-run if they change
         "km": vehicle.get("odometer_km"),
         "spec": [vehicle.get(k) for k in ("trim", "cab", "bed", "driveline", "engine")],
     }

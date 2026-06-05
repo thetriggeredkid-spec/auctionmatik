@@ -55,6 +55,8 @@ REMARK_PATTERNS = [
     (r"\b(repaint|re-?paint(ed)?)\b",         "repaint"),
     (r"panel.*repaint|repaint.*panel",        "repaint"),
     (r"check\s*engine|\bcel\b|engine light",  "check_engine"),
+    (r"airbag light|\bsrs\b light|airbag.{0,15}\bon\b", "airbag_light"),
+    (r"different colou?r|mismatched paint|repainted|different shade", "repaint"),
     (r"mechanical (problem|issue)",           "mechanical_unspecified"),
     (r"\bframe\b",                            "frame"),
     (r"\bflood",                              "flood"),
@@ -67,7 +69,8 @@ REMARK_PATTERNS = [
 ]
 
 # Signals that imply a mechanical-risk reserve even without a quote.
-_MECHANICAL_SIGNALS = {"exhaust_leak", "check_engine", "mechanical_unspecified", "not_drivable", "freezing_damage"}
+_MECHANICAL_SIGNALS = {"exhaust_leak", "check_engine", "mechanical_unspecified", "not_drivable",
+                       "freezing_damage", "airbag_light"}
 
 
 def _is_claims_code(code: str) -> bool:
@@ -159,9 +162,13 @@ def analyze_declarations(declarations: str = "", condition_notes: str = "") -> d
         verify.append("Confirm exhaust leak scope (gasket vs. manifold vs. full system).")
     if "check_engine" in signals:
         verify.append("Pull CEL codes — could be trivial or a major driveability fault.")
+    if "airbag_light" in signals:
+        flags.append({"code": "airbag_light", "severity": "high",
+                      "message": "Airbag/SRS light on — possible deployed/disconnected airbag or fault; safety + repair cost. Verify."})
+        verify.append("Scan the SRS/airbag system — light-on can mean a prior deployment or a sensor fault.")
     if "repaint" in signals:
         flags.append({"code": "prior_repaint", "severity": "low",
-                      "message": "Panel repaint declared — prior bodywork; check for hidden damage/quality."})
+                      "message": "Repaint / mismatched panel — prior bodywork or a replacement panel needing paint-match; check for hidden damage."})
     if has("HD") or "hail" in signals:
         flags.append({"code": "hail_damage", "severity": "low",
                       "message": "Hail damage declared — cosmetic (PDR), not structural. Severity is "
