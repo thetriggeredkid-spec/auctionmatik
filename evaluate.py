@@ -19,7 +19,7 @@ from engine.valuator import valuate
 from engine.max_bid import calculate as calc_max_bid
 
 VEHICLE_TYPES = ["Car", "Truck", "Sport Utility", "Van"]
-REGAL_INVENTORY_URL = "https://regalauctions.com/inventory/"
+REGAL_INVENTORY_URL = "https://regalauctions.com/inventory.php"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
     "Accept": "application/json",
@@ -92,6 +92,42 @@ def fetch_listing_from_api(contract: str) -> dict | None:
     return None
 
 
+def parse_truck_style(style: str) -> dict:
+    """Parse Regal's `style` string (e.g. 'CREW CAB 4WD 2.7L') into cab / bed /
+    driveline / engine. Cab config + bed + engine are primary value drivers on trucks."""
+    import re
+    out = {}
+    t = (style or "").upper()
+    if not t:
+        return out
+    if any(k in t for k in ("SUPERCREW", "CREW CAB", "CREWCAB", "CREWMAX")):
+        out["cab"] = "Crew Cab"
+    elif any(k in t for k in ("SUPERCAB", "SUPER CAB", "QUAD CAB", "DOUBLE CAB", "KING CAB",
+                              "ACCESS CAB", "EXTENDED", "EXT CAB", "EXTRA CAB")):
+        out["cab"] = "Extended Cab"
+    elif any(k in t for k in ("REGULAR CAB", "REG CAB", "SINGLE CAB", "STANDARD CAB", "STD CAB")):
+        out["cab"] = "Regular Cab"
+    if "SWB" in t or "SHORT" in t:
+        out["bed"] = "Short Box"
+    elif "LWB" in t or "LONG" in t:
+        out["bed"] = "Long Box"
+    else:
+        m_bed = re.search(r"(\d(?:\.\d)?)\s*(?:FT|')", t)
+        if m_bed:
+            out["bed"] = f"{m_bed.group(1)} ft box"
+    m_eng = re.search(r"(\d\.\d)\s*L", t)
+    if m_eng:
+        out["engine"] = f"{m_eng.group(1)}L"
+    for dl in ("4WD", "AWD", "RWD", "FWD"):
+        if dl in t:
+            out["driveline"] = dl
+            break
+    else:
+        if "4X4" in t:
+            out["driveline"] = "4WD"
+    return out
+
+
 def parse_listing_to_vehicle(rec: dict) -> dict:
     """Convert raw Regal API/DB record to vehicle spec dict."""
     import re
@@ -102,6 +138,16 @@ def parse_listing_to_vehicle(rec: dict) -> dict:
         digits = re.sub(r"[^\d]", "", str(raw).split()[0])
         return int(digits) if digits else None
 
+    # The structured trim/style live in raw_json on a DB row (the parsed columns are
+    # often empty) — fall back to it so truck trim/cab/bed aren't lost.
+    rj = rec.get("raw_json")
+    if isinstance(rj, str):
+        try:
+            rj = json.loads(rj)
+        except (ValueError, TypeError):
+            rj = {}
+    rj = rj or {}
+
     # Handle both raw API keys and DB column names
     odo_raw = rec.get("odometer") or rec.get("odometer_km")
     if isinstance(odo_raw, int):
@@ -109,17 +155,30 @@ def parse_listing_to_vehicle(rec: dict) -> dict:
     else:
         odometer_km = parse_odo(odo_raw)
 
+    style = rec.get("style") or rj.get("style")
+    spec = parse_truck_style(style)
+
+    trim = rec.get("trim") or rj.get("trim")
+    if not trim:
+        qa = rec.get("qamodel") or rj.get("qamodel")
+        model = rec.get("model") or rj.get("model")
+        if qa and (not model or qa.strip().upper() != str(model).strip().upper()):
+            trim = qa
+
     return {
         "year":          int(rec.get("year") or 0) or None,
         "make":          rec.get("adjusted_make") or rec.get("make"),
         "model":         rec.get("model"),
-        "trim":          rec.get("trim") or rec.get("qamodel"),
-        "driveline":     rec.get("driveline"),
+        "trim":          trim,
+        "cab":           spec.get("cab"),
+        "bed":           spec.get("bed"),
+        "style":         style,
+        "driveline":     rec.get("driveline") or rj.get("driveline") or spec.get("driveline"),
         "vehicle_type":  rec.get("vehicle_type"),
         "fuel_type":     rec.get("fuel_type"),
         "odometer_km":   odometer_km,
         "color":         rec.get("color"),
-        "engine":        rec.get("engine"),
+        "engine":        rec.get("engine") or rj.get("engine") or spec.get("engine"),
         "transmission":  rec.get("transmission"),
         "seller_type":   rec.get("seller_type"),
         "declarations":  rec.get("declarations"),
@@ -340,13 +399,157 @@ def print_report(vehicle: dict, valuation: dict, listing: dict):
     print(f"  TOP COMPS USED")
     print(f"{'─' * 70}")
     for c in valuation["comp_list"]:
-        print(f"  {c.get('year')} {c.get('make')} {c.get('model')} {c.get('trim',''):15} | "
-              f"{c.get('odometer_km',0):>7,} km | "
-              f"{fmt_dollars(c['sale_price']):>8} | "
-              f"sold {c.get('sold_date','?')} | "
-              f"score {c['_combined_weight']:.2f}")
+        # wholesale comps have sale_price+sold_date; retail comps have asking_price+posted_at
+        price = c.get("sale_price") or c.get("asking_price") or 0
+        date_label = c.get("sold_date") or c.get("posted_at") or "?"
+        score = c.get("_combined_weight") or c.get("_similarity") or 0.0
+        source_tag = f" [{c['source']}]" if c.get("source") not in (None, "regal_market_report") else ""
+        print(f"  {c.get('year')} {c.get('make')} {c.get('model')} {(c.get('trim') or ''):15} | "
+              f"{(c.get('odometer_km') or 0):>7,} km | "
+              f"{fmt_dollars(price):>8} | "
+              f"sold {date_label}{source_tag} | "
+              f"score {score:.2f}")
 
     print(f"\n{'═' * 70}\n")
+
+
+# ── Vision integration ────────────────────────────────────────────────────────
+
+def _get_subject_vision(conn, contract: str) -> dict:
+    """Fetch the subject's stored vision_assessment (or {} if none)."""
+    cursor = get_cursor(conn)
+    cursor.execute(
+        "SELECT vision_assessment FROM regal_listings WHERE contract = %s "
+        "ORDER BY last_updated_at DESC LIMIT 1",
+        (contract,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    return (row.get("vision_assessment") if row else None) or {}
+
+
+def _apply_vision_spec(vehicle: dict, va: dict):
+    """Overlay a vision_assessment onto the vehicle spec."""
+    from engine.vision_factors import vision_to_spec
+    if not va:
+        print("  [--vision] No vision_assessment stored for this contract yet — "
+              "run photo enrichment + `python3 -m engine.vision` first. Using defaults.")
+        return
+    spec = vision_to_spec(va, vehicle)
+    vehicle.update(spec)
+    summary = ", ".join(f"{k}={v}" for k, v in spec.items() if k != "damage_items")
+    print(f"  [--vision] Applied from photos: {summary or '(no priced clues)'}")
+    if spec.get("damage_items"):
+        print(f"             + {len(spec['damage_items'])} damage item(s) costed from photos")
+
+
+# ── Recommendation Engine integration ─────────────────────────────────────────
+
+def _advisor_anchor(conn, vehicle: dict, valuation: dict):
+    """As-is retail anchor: per-comp scrutiny of retail listings if we have them,
+    else fall back to the valuator's anchor. Returns (anchor_cents, clean_cents, source)."""
+    from engine.comp_scrutiny import scrutinize
+    yr = vehicle.get("year")
+    make = (vehicle.get("make") or "").upper()
+    model = (vehicle.get("model") or "").upper()
+    comps = []
+    if yr and make and model:
+        cur = get_cursor(conn)
+        cur.execute("""SELECT external_id, year, make, model, trim, odometer_km, asking_price, posted_at,
+                              title, description, listing_url, source, main_photo_url
+                       FROM retail_listings
+                       WHERE UPPER(make) = %s AND UPPER(COALESCE(model, '')) LIKE %s
+                         AND year BETWEEN %s AND %s AND asking_price >= 300000 AND is_sold = FALSE
+                         AND external_id NOT IN (SELECT external_id FROM comp_feedback WHERE status = 'bad')
+                       ORDER BY (odometer_km IS NOT NULL) DESC, collected_at DESC LIMIT 25""",
+                    (make, model.split()[0] + "%", yr - 2, yr + 2))
+        comps = [dict(r) for r in cur.fetchall()]
+        cur.close()
+    if len(comps) >= 3:
+        res = scrutinize(vehicle, comps)
+        if res.get("anchor"):
+            return (res["anchor"], res["anchor"],
+                    f"retail comp-scrutiny ({len(res['clean'])} comps, {res['confidence']})", res)
+    # Fallback to the RAW comp anchor (base_median), never retail_mid — retail_mid carries the
+    # factor adjustments (incl. the broken-on-cheap/wreck condition math) and can be negative.
+    base = valuation.get("base_median") or valuation.get("retail_mid")
+    return base, base, "wholesale-derived (no retail comps — scrape for a better anchor)", None
+
+
+def _run_advisor(conn, vehicle: dict, va: dict, valuation: dict,
+                 ai: bool = False, deep: bool = False, auto: bool = False):
+    from engine.declarations import analyze_declarations
+    from engine.advisor import advise, render
+
+    decl = analyze_declarations(vehicle.get("declarations") or "", vehicle.get("condition_notes") or "")
+    anchor, clean, source, scrutiny = _advisor_anchor(conn, vehicle, valuation)
+
+    cur = get_cursor(conn)
+    cur.execute("SELECT carfax_report FROM regal_listings WHERE contract = %s "
+                "ORDER BY last_updated_at DESC LIMIT 1", (vehicle.get("contract"),))
+    row = cur.fetchone()
+    cur.close()
+    carfax = (row.get("carfax_report") if row else None) or None
+
+    print(f"\n{'═' * 70}")
+    print(f"  RECOMMENDATION (Advisor)   [anchor: {source}]")
+    print(f"{'═' * 70}")
+    ch = advise(vehicle, anchor_cents=anchor, clean_value_cents=clean, decl=decl, vision=va,
+                carfax=carfax, profile_key="charles")
+    print(render(ch))
+    me = advise(vehicle, anchor_cents=anchor, clean_value_cents=clean, decl=decl, vision=va,
+                carfax=carfax, profile_key="mechanic")
+    print(f"\n👤 CROSS-PROFILE — {me['profile']}: {me['verdict']}  max bid ${me['max_bid_cents'] / 100:,.0f}")
+
+    if ai:
+        from engine.advisor import PROFILES
+        from engine.repair_estimate import estimate_repair
+        from engine.appraiser import appraise, render as ai_render, REASONING_MODEL
+
+        rc = PROFILES["charles"]["repair"]
+        comps_rc = (va or {}).get("repair_components") or []
+        repair_est = estimate_repair(comps_rc, buffer=PROFILES["charles"]["repair_buffer"],
+                                     small_factor=rc["small_factor"], large_factor=rc["large_factor"])
+        # Pre-compute all sourcings + pull stored Carfax so the deep pass rarely needs a tool round-trip.
+        repair_alternatives = None
+        if comps_rc:
+            repair_alternatives = {
+                "oem_shop": estimate_repair(comps_rc, small_factor=1.0, large_factor=1.0),
+                "middle": estimate_repair(comps_rc, small_factor=0.65, large_factor=1.0),
+                "used_diy": estimate_repair(comps_rc, small_factor=0.5, large_factor=0.55),
+            }
+        prof = {**PROFILES["charles"], "label": "Charles (flipper)"}
+
+        def _call(m):
+            return appraise(
+                vehicle,
+                comp_narrative=(scrutiny or {}).get("narrative") or [],
+                comp_anchor_cents=anchor,
+                comp_confidence=(scrutiny or {}).get("confidence", "low"),
+                declarations=decl, vision=va, repair_est=repair_est,
+                deterministic=ch, profile=prof, mode=m,
+                carfax=carfax, repair_alternatives=repair_alternatives,
+                tool_ctx=({"conn": conn, "subject": vehicle, "vision": va,
+                           "profile": PROFILES["charles"]} if m == "deep" else None),
+            )
+
+        try:
+            if auto:
+                # Funnel: fast triage everything; auto-deep-dive only buy candidates with thin evidence.
+                print(f"\n{'═' * 70}\n  AI APPRAISER (triage — {REASONING_MODEL})\n{'═' * 70}")
+                t = _call("triage")
+                print(ai_render(t))
+                if t.get("needs_deep_dive") and t.get("verdict") in ("BID", "BID_TO_FIX"):
+                    print(f"\n{'═' * 70}\n  AUTO-ESCALATE → deep agentic pass (buy candidate, thin evidence)\n{'═' * 70}")
+                    print(ai_render(_call("deep")))
+                else:
+                    print("\n(no deep dive — triage was decisive)")
+            else:
+                m = "deep" if deep else "triage"
+                print(f"\n{'═' * 70}\n  AI APPRAISER ({m} — {REASONING_MODEL})\n{'═' * 70}")
+                print(ai_render(_call(m)))
+        except Exception as e:
+            print(f"  AI appraiser unavailable: {e}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -358,9 +561,27 @@ def main():
     parser.add_argument("--margin", type=int, choices=[1, 2, 3, 4], default=None,
                         help="Preferred margin tier (1–4)")
     parser.add_argument("--log", action="store_true", help="Log valuation to DB")
+    parser.add_argument("--vision", action="store_true",
+                        help="Use stored vision_assessment for condition/mods (skips prompts)")
+    parser.add_argument("--advise", action="store_true",
+                        help="Print the Advisor recommendation (verdict, max bid, recon, sale plan)")
+    parser.add_argument("--ai", action="store_true",
+                        help="Run the AI Appraiser — fast triage pass (Sonnet) alongside the rules engine")
+    parser.add_argument("--deep", action="store_true",
+                        help="Run the AI Appraiser deep pass (full narration + escalation tools)")
+    parser.add_argument("--auto", action="store_true",
+                        help="Triage, then auto-escalate to a deep pass only for thin-evidence buy candidates")
     args = parser.parse_args()
 
     conn = get_conn()
+
+    # Apply saved settings (edited profiles / margins / fees / GST / toggles) so the CLI
+    # produces the same numbers as the dashboard — important for overnight batch jobs.
+    try:
+        from engine import settings as _settings
+        _settings.apply_from_db(conn)
+    except Exception as _e:  # noqa: BLE001 — fall back to hardcoded defaults
+        print(f"[settings] not applied ({_e}); using defaults")
 
     # 1. Fetch listing
     listing_raw = fetch_listing_from_db(args.contract, conn)
@@ -384,9 +605,18 @@ def main():
         print(f"  Notes:     {vehicle['condition_notes']}")
     print(f"{'═' * 60}")
 
-    # 3. Prompt for condition inputs
-    condition_updates = prompt_condition(vehicle, skip=args.no_prompt)
+    # 3. Condition inputs — from photos (--vision) or prompts/defaults
+    condition_updates = prompt_condition(vehicle, skip=args.no_prompt or args.vision)
     vehicle.update(condition_updates)
+    va = {}
+    if args.vision:
+        va = _get_subject_vision(conn, args.contract)
+        _apply_vision_spec(vehicle, va)
+
+    # A Carfax report exists for any VIN'd Regal unit — don't assume "no service history".
+    # Treat as unknown (0%) until the report is actually read (see local Carfax agent).
+    if vehicle.get("vin") and vehicle.get("service_records") in (None, "none"):
+        vehicle["service_records"] = "unknown"
 
     # 4. Run valuator
     print("\nRunning valuation engine...")
@@ -399,6 +629,13 @@ def main():
 
     # 5. Print report
     print_report(vehicle, valuation, listing_raw if isinstance(listing_raw, dict) else {})
+
+    # 6. Recommendation (Advisor + optional AI Appraiser) — the actionable output
+    if args.vision or args.advise or args.ai or args.deep or args.auto:
+        if not va:
+            va = _get_subject_vision(conn, args.contract)
+        _run_advisor(conn, vehicle, va, valuation,
+                     ai=args.ai or args.deep or args.auto, deep=args.deep, auto=args.auto)
 
     conn.close()
 
