@@ -11,3 +11,4 @@ playwright>=1.40.0   # for collector.carfax_agent (run dashboard locally; needs 
 # dev / tooling
 pytest>=8.0.0        # tests/ characterization suite: venv/bin/python -m pytest tests/ -q
 black>=24.0.0        # code formatter (also the .claude PostToolUse hook on edited .py)
+ruff>=0.5.0          # linter: venv/bin/python -m ruff check . (config in ruff.toml)

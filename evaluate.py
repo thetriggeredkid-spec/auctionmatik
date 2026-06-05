@@ -12,7 +12,6 @@ import sys
 import argparse
 import json
 import requests
-from datetime import datetime
 
 from db.connection import get_conn, get_cursor
 from engine.valuator import valuate
@@ -355,7 +354,7 @@ def print_report(vehicle: dict, valuation: dict, listing: dict):
     print(f"  Base median (pre-adjustment): {fmt_dollars(valuation['base_median'])}")
 
     print(f"\n{'─' * 70}")
-    print(f"  MAX BID CALCULATOR  (Regal fee included, 5% GST)")
+    print("  MAX BID CALCULATOR  (Regal fee included, 5% GST)")
     print(f"{'─' * 70}")
     for i in range(1, 5):
         t = max_bids[f"tier{i}"]
@@ -364,7 +363,7 @@ def print_report(vehicle: dict, valuation: dict, listing: dict):
               f"(fee ${t['buyer_fee']}, margin ${t['margin']:,}){marker}")
 
     print(f"\n{'─' * 70}")
-    print(f"  FACTOR BREAKDOWN")
+    print("  FACTOR BREAKDOWN")
     print(f"{'─' * 70}")
     print(f"  {'Factor':<40} {'Delta':>8}  {'$ Impact':>10}  Reasoning")
     print(f"  {'─'*40} {'─'*8}  {'─'*10}  {'─'*20}")
@@ -380,7 +379,7 @@ def print_report(vehicle: dict, valuation: dict, listing: dict):
     # Sub-factors
     has_sub = any(f.get("_is_sub") for f in valuation["factor_breakdown"])
     if has_sub:
-        print(f"\n  Detail breakdown:")
+        print("\n  Detail breakdown:")
         for f in valuation["factor_breakdown"]:
             if not f.get("_is_sub"):
                 continue
@@ -389,14 +388,14 @@ def print_report(vehicle: dict, valuation: dict, listing: dict):
 
     if valuation["flags"]:
         print(f"\n{'─' * 70}")
-        print(f"  ⚑  FLAGS")
+        print("  ⚑  FLAGS")
         print(f"{'─' * 70}")
         for flag in valuation["flags"]:
             sev = flag["severity"].upper()
             print(f"  [{sev:^6}] {flag['code']}: {flag['message']}")
 
     print(f"\n{'─' * 70}")
-    print(f"  TOP COMPS USED")
+    print("  TOP COMPS USED")
     print(f"{'─' * 70}")
     for c in valuation["comp_list"]:
         # wholesale comps have sale_price+sold_date; retail comps have asking_price+posted_at

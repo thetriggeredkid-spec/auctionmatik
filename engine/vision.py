@@ -298,6 +298,6 @@ if __name__ == "__main__":
             print(f"  [{d.get('severity','?'):8s}] {d.get('panel','?'):22s} {d.get('damage_type','?')}")
 
     if result.get("aftermarket_mods"):
-        print(f"\nAftermarket mods:")
+        print("\nAftermarket mods:")
         for m in result["aftermarket_mods"]:
             print(f"  + {m.get('type','?')} ({m.get('quality','?')})")

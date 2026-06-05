@@ -14,7 +14,6 @@ overrides verdict/value/max-bid/confidence and adds the narrated reasoning,
 key adjustments, conditional bid and run metadata.
 """
 
-import os
 import re
 import json
 import time
@@ -30,7 +29,7 @@ from engine.repair_estimate import estimate_repair
 # reuse the CLI's listing/anchor/vision plumbing rather than duplicating it
 from evaluate import (
     fetch_listing_from_db, parse_listing_to_vehicle, prompt_condition,
-    _get_subject_vision, _apply_vision_spec, _advisor_anchor, parse_truck_style,
+    _get_subject_vision, _apply_vision_spec, _advisor_anchor,
 )
 
 REGAL_DETAIL_URL = "https://regalauctions.com/inventory.php?a=details&contract="

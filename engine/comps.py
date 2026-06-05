@@ -98,7 +98,8 @@ def _comp_tier(comp: dict) -> str:
     """
     declarations = (comp.get("declarations") or "").upper()
     notes = (comp.get("condition_notes") or "").lower()
-    seller_type = (comp.get("seller_type") or "").upper()
+    # Note: seller_type (e.g. Dealer at auction) is a motivated-seller signal but does
+    # NOT demote a comp to 'distressed' — the price still reflects the market floor.
 
     # Check declarations for distress signals
     decl_parts = {d.strip() for d in re.split(r"[,;\s]+", declarations) if d.strip()}
@@ -437,7 +438,7 @@ if __name__ == "__main__":
             med = f"${s['median']/100:,.0f}" if s['median'] else "?"
             print(f"  [{tier:12s}] n={s['count']:3d}  range={lo}–{hi}  median={med}")
 
-    print(f"\nTop 5 comps:")
+    print("\nTop 5 comps:")
     for c in result["comp_list"][:5]:
         decl = c.get('declarations') or '-'
         print(f"  [{c['_tier']:12s}] {c['year']} {c['make']} {c['model']} {c.get('trim',''):15s} "

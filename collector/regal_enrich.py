@@ -324,7 +324,7 @@ if __name__ == "__main__":
             print(f"    {d['severity']:8s}  {d['panel']}")
         print(f"  Condition:     {result['condition_detail']}")
         print(f"  Carfax URL:    {result['carfax_url']}")
-        print(f"\nPhoto URLs (first 5):")
+        print("\nPhoto URLs (first 5):")
         for u in result["photo_urls"][:5]:
             print(f"  {u}")
     else:

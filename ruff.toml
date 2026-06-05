@@ -1,0 +1,17 @@
+# Ruff config — pragmatic linting for the Auctionmatik Python code.
+# Focus on real-bug rules (pyflakes F) + pycodestyle errors/warnings; skip stylistic
+# line-length and let `black` own formatting (the .claude hook formats edited files).
+line-length = 120
+target-version = "py313"
+
+extend-exclude = ["venv", "backups", "logs", "data", "dashboard/static", "__pycache__"]
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length — black-formatted; not enforced
+    "E731",  # lambda assignment — used intentionally in a few small helpers
+    "E741",  # ambiguous var name (l/I/O) — pre-existing single-letter locals
+    "E702",  # multiple statements on a line (semicolon) — intentional one-liners
+    "E402",  # module import not at top — intentional deferred imports (sys.path, app setup)
+]

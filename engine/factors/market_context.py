@@ -119,7 +119,6 @@ def evaluate(vehicle: dict, comp_pool: dict, base_price: int) -> dict:
 
     # ── Price relative to comps ───────────────────────────────────────────
     if abs(price_relative) > 0.15:
-        direction = "above" if price_relative > 0 else "below"
         if price_relative < -0.15:
             # Significantly below median — investigate for hidden issues
             flags.append({

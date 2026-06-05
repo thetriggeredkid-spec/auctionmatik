@@ -22,7 +22,7 @@ import os
 import sys
 import time
 import argparse
-from datetime import date, datetime
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from db.connection import get_conn, get_cursor
