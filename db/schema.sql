@@ -40,6 +40,22 @@ CREATE TABLE IF NOT EXISTS regal_sold (
     -- Raw API payload — preserve everything
     raw_json            JSONB,
 
+    -- Enrichment data (from regal_enrich.py — fetched from details page)
+    -- Photo URLs at 800x600w from CloudFront
+    photo_urls          TEXT[],
+    -- Heat map damage layers: [{panel, severity}] e.g. [{panel:"left front door", severity:"yellow"}]
+    -- severity: yellow=minor, orange=moderate, red=severe
+    heat_map_damage     JSONB,
+    -- Structured at-a-glance fields from details page
+    -- {windshield, keys, starts, drivable, battery, tire_lf, tire_rf, tire_lr, tire_rr}
+    condition_detail    JSONB,
+    -- Carfax URL (constructed from id+vin, or scraped from details page)
+    carfax_url          TEXT,
+    -- Claude vision assessment of photos (Phase 2)
+    -- {exterior_grade, interior_grade, damage_type_notes, condition_summary}
+    vision_assessment   JSONB,
+    enriched_at         TIMESTAMPTZ,
+
     -- Collection metadata
     collected_at        TIMESTAMPTZ DEFAULT NOW(),
     source              VARCHAR(20) DEFAULT 'regal_market_report'
@@ -84,12 +100,72 @@ CREATE TABLE IF NOT EXISTS regal_listings (
     status              VARCHAR(20),                    -- ACTIVE / SOLD / WITHDRAWN
 
     raw_json            JSONB,
+    photo_urls          TEXT[],
+    heat_map_damage     JSONB,
+    condition_detail    JSONB,
+    carfax_url          TEXT,
+    vision_assessment   JSONB,
+    enriched_at         TIMESTAMPTZ,
     first_seen_at       TIMESTAMPTZ DEFAULT NOW(),
     last_updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_regal_listings_ymm   ON regal_listings (year, make, model);
 CREATE INDEX IF NOT EXISTS idx_regal_listings_vin   ON regal_listings (vin);
+
+-- Retail market listings — from Facebook Marketplace and Kijiji via Apify
+-- These are the PRIMARY price anchor for retail valuation
+CREATE TABLE IF NOT EXISTS retail_listings (
+    id                  SERIAL PRIMARY KEY,
+    external_id         VARCHAR(100) UNIQUE NOT NULL,    -- Apify listing ID (FB item ID or Kijiji listing ID)
+    source              VARCHAR(20) NOT NULL,            -- 'facebook_marketplace' | 'kijiji'
+
+    -- Vehicle identity
+    year                SMALLINT,
+    make                VARCHAR(50),
+    model               VARCHAR(100),
+    trim                VARCHAR(100),
+    body_style          VARCHAR(50),
+    vin                 VARCHAR(17),
+    color               VARCHAR(50),
+    engine              VARCHAR(50),
+    transmission        VARCHAR(20),
+    driveline           VARCHAR(10),
+    fuel_type           VARCHAR(20),
+    odometer_km         INTEGER,
+
+    -- Listing data
+    title               TEXT,
+    asking_price        INTEGER NOT NULL,                -- CAD cents
+    location_city       VARCHAR(100),
+    location_province   VARCHAR(50),
+    seller_type         VARCHAR(20),                     -- 'private' | 'dealer'
+    listing_url         TEXT,
+    description         TEXT,
+    is_sold             BOOLEAN DEFAULT FALSE,
+    posted_at           TIMESTAMPTZ,
+
+    -- Listing photos (for vision assessment)
+    photo_urls          TEXT[],
+    photo_count         SMALLINT,
+    main_photo_url      TEXT,
+
+    -- Claude vision assessment of photos (structured clue extraction, retail_listings)
+    vision_assessment   JSONB,
+
+    -- Raw API payload
+    raw_json            JSONB,
+
+    -- Collection metadata
+    collected_at        TIMESTAMPTZ DEFAULT NOW(),
+    last_seen_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_retail_ymm     ON retail_listings (year, make, model);
+CREATE INDEX IF NOT EXISTS idx_retail_source  ON retail_listings (source);
+CREATE INDEX IF NOT EXISTS idx_retail_price   ON retail_listings (asking_price);
+CREATE INDEX IF NOT EXISTS idx_retail_sold    ON retail_listings (is_sold);
+CREATE INDEX IF NOT EXISTS idx_retail_vin     ON retail_listings (vin);
 
 -- Valuation outputs — one row per engine run
 CREATE TABLE IF NOT EXISTS valuations (
