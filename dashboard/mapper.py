@@ -798,14 +798,21 @@ def deep_cached_contracts(conn, contracts: list, profile: str) -> set:
     return out
 
 
-def _scrape_retail_comps(vehicle: dict, location: str = "edmonton") -> int:
+def _scrape_retail_comps(vehicle: dict, location: str | None = None) -> int:
     """Trim-targeted Facebook Marketplace scrape for this vehicle → retail_listings.
-    Returns the number upserted. Raises if make/model unknown or APIFY_TOKEN missing."""
+    Returns the number upserted. Raises if make/model unknown or APIFY_TOKEN missing.
+    `location` defaults to the active location's city (Edmonton if unset)."""
     make = (vehicle.get("make") or "").strip()
     model = (vehicle.get("model") or "").strip()
     year = vehicle.get("year")
     if not (make and model):
         raise RuntimeError("vehicle make/model unknown — can't search for comps")
+    if not location:
+        from engine import settings as _st
+
+        location = (
+            _st.active_location().get("city") or "edmonton"
+        ).strip() or "edmonton"
     from collector.retail_comps import collect_facebook
 
     # model can be "MAZDA3" with make "MAZDA" — avoid a redundant doubled query
@@ -829,13 +836,17 @@ def _retail_comp_count(conn, vehicle: dict) -> int:
     model = (vehicle.get("model") or "").upper()
     if not (yr and make and model):
         return 0
+    from engine import settings as _st
+
+    province = (_st.active_location().get("province") or "AB").upper()
     cur = get_cursor(conn)
     cur.execute(
         """SELECT count(*) n FROM retail_listings
                    WHERE UPPER(make) = %s AND UPPER(COALESCE(model,'')) LIKE %s
                      AND year BETWEEN %s AND %s AND asking_price >= 300000 AND is_sold = FALSE
+                     AND UPPER(COALESCE(location_province,'')) = %s
                      AND external_id NOT IN (SELECT external_id FROM comp_feedback WHERE status='bad')""",
-        (make, model.split()[0] + "%", yr - 2, yr + 2),
+        (make, model.split()[0] + "%", yr - 2, yr + 2, province),
     )
     n = cur.fetchone()["n"]
     cur.close()

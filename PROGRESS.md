@@ -131,7 +131,12 @@ business, 0% private). A **location setting** drives both the tax and where comp
     `settings.jsx` (active dropdown + per-location rate pairs). AB pre-seeded {5%, 0%}.
   - **Regression guarded:** auction path byte-identical — Jeep 37316 still BID, max bid $11,260, thesis
     unchanged. 87 tests pass (added context + location-tax tests), ruff clean.
-- Phase B (location-aware comps), C (off-contract appraisal + selector/VIN UI), D (ad-URL ingestion) — next.
+- **Phase B — location-aware comps ✅**: the retail-comp query (`evaluate._advisor_anchor`,
+  `mapper._retail_comp_count`) filters `retail_listings` by the active location's **province**, and
+  `_scrape_retail_comps` scrapes the active **city** (default Edmonton/AB → Regal flow unchanged: still
+  4 Wrangler comps). Switching the active location to Toronto/ON correctly finds no local comps and
+  falls back to the wholesale anchor (deep mode then scrapes Toronto). Province codes are clean (AB/BC/SK).
+- Phase C (off-contract appraisal + selector/VIN UI), D (ad-URL ingestion) — next.
 
 ### Done (post-QA, June)
 - **Deep-run streaming** — SSE `/api/evaluate_stream`; live stage checklist + elapsed timer on the

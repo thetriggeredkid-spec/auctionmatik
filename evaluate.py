@@ -636,9 +636,12 @@ def _advisor_anchor(conn, vehicle: dict, valuation: dict):
     """
     from engine.comp_scrutiny import scrutinize
 
+    from engine import settings as _st
+
     yr = vehicle.get("year")
     make = (vehicle.get("make") or "").upper()
     model = (vehicle.get("model") or "").upper()
+    province = (_st.active_location().get("province") or "AB").upper()
     comps = []
     if yr and make and model:
         cur = get_cursor(conn)
@@ -648,9 +651,10 @@ def _advisor_anchor(conn, vehicle: dict, valuation: dict):
                        FROM retail_listings
                        WHERE UPPER(make) = %s AND UPPER(COALESCE(model, '')) LIKE %s
                          AND year BETWEEN %s AND %s AND asking_price >= 300000 AND is_sold = FALSE
+                         AND UPPER(COALESCE(location_province, '')) = %s
                          AND external_id NOT IN (SELECT external_id FROM comp_feedback WHERE status = 'bad')
                        ORDER BY (odometer_km IS NOT NULL) DESC, collected_at DESC LIMIT 25""",
-            (make, model.split()[0] + "%", yr - 2, yr + 2),
+            (make, model.split()[0] + "%", yr - 2, yr + 2, province),
         )
         comps = [dict(r) for r in cur.fetchall()]
         for c in comps:  # decode stored vision JSON → comp["vision"]
