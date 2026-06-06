@@ -33,19 +33,33 @@ AUTO_TAG = "[auto] engine call vs realized auction price"
 def _vehicle_from_sold(rec: dict) -> dict:
     """Map a regal_sold row to the vehicle spec the engine consumes."""
     return {
-        "year": rec.get("year"), "make": rec.get("make"), "model": rec.get("model"),
-        "trim": rec.get("trim"), "driveline": rec.get("driveline"),
-        "vehicle_type": rec.get("vehicle_type"), "fuel_type": rec.get("fuel_type"),
-        "odometer_km": rec.get("odometer_km"), "engine": rec.get("engine"),
-        "transmission": rec.get("transmission"), "color": rec.get("color"),
-        "seller_type": rec.get("seller_type"), "declarations": rec.get("declarations"),
-        "condition_notes": rec.get("condition_notes"), "vin": rec.get("vin"),
+        "year": rec.get("year"),
+        "make": rec.get("make"),
+        "model": rec.get("model"),
+        "trim": rec.get("trim"),
+        "driveline": rec.get("driveline"),
+        "vehicle_type": rec.get("vehicle_type"),
+        "fuel_type": rec.get("fuel_type"),
+        "odometer_km": rec.get("odometer_km"),
+        "engine": rec.get("engine"),
+        "transmission": rec.get("transmission"),
+        "color": rec.get("color"),
+        "seller_type": rec.get("seller_type"),
+        "declarations": rec.get("declarations"),
+        "condition_notes": rec.get("condition_notes"),
+        "vin": rec.get("vin"),
         "contract": rec.get("contract"),
         # neutral condition defaults (we have no inspection for a historical sale)
-        "exterior_grade": 3, "interior_grade": 3, "mechanical_grade": 3,
-        "damage_items": [], "options_present": [], "accident_type": "none",
-        "accident_claim_amount": 0, "rebuilt_title": False,
-        "service_records": "unknown", "odometer_integrity": "clean",
+        "exterior_grade": 3,
+        "interior_grade": 3,
+        "mechanical_grade": 3,
+        "damage_items": [],
+        "options_present": [],
+        "accident_type": "none",
+        "accident_claim_amount": 0,
+        "rebuilt_title": False,
+        "service_records": "unknown",
+        "odometer_integrity": "clean",
     }
 
 
@@ -59,10 +73,18 @@ def _engine_call(conn, rec: dict) -> dict | None:
     anchor = valuation.get("base_median") or valuation.get("retail_mid")
     if not anchor:
         return None
-    decl = analyze_declarations(vehicle.get("declarations") or "",
-                               vehicle.get("condition_notes") or "")
-    ch = advise(vehicle, anchor_cents=anchor, clean_value_cents=anchor, decl=decl,
-                vision={}, carfax=None, profile_key="charles")
+    decl = analyze_declarations(
+        vehicle.get("declarations") or "", vehicle.get("condition_notes") or ""
+    )
+    ch = advise(
+        vehicle,
+        anchor_cents=anchor,
+        clean_value_cents=anchor,
+        decl=decl,
+        vision={},
+        carfax=None,
+        profile_key="charles",
+    )
     return {
         "verdict": ch["verdict"],
         "value_cents": ch.get("expected_sale_cents", anchor),
@@ -74,8 +96,13 @@ def _engine_call(conn, rec: dict) -> dict | None:
 def _feedback_params(rec: dict, call: dict) -> tuple:
     """Build the SQL params for the listing_feedback upsert (cents in DB)."""
     return (
-        str(rec.get("contract")), rec.get("year"), rec.get("make"), rec.get("model"),
-        _norm_verdict(call["verdict"]), call["value_cents"], call["max_bid_cents"],
+        str(rec.get("contract")),
+        rec.get("year"),
+        rec.get("make"),
+        rec.get("model"),
+        _norm_verdict(call["verdict"]),
+        call["value_cents"],
+        call["max_bid_cents"],
         rec.get("sale_price"),  # actual_sale_price (already CAD cents in regal_sold)
         AUTO_TAG,
     )
@@ -105,8 +132,10 @@ def import_outcomes(limit=100, make=None, min_comps=3, dry_run=False) -> dict:
     if make:
         where += " AND UPPER(make) = %s"
         params.append(make.upper())
-    cur.execute(f"SELECT * FROM regal_sold WHERE {where} ORDER BY sold_date DESC LIMIT %s",
-                (*params, limit))
+    cur.execute(
+        f"SELECT * FROM regal_sold WHERE {where} ORDER BY sold_date DESC LIMIT %s",
+        (*params, limit),
+    )
     records = [dict(r) for r in cur.fetchall()]
     cur.close()
 
@@ -126,36 +155,53 @@ def import_outcomes(limit=100, make=None, min_comps=3, dry_run=False) -> dict:
             errs.append(be)
         if not dry_run:
             wcur = get_cursor(conn)
-            wcur.execute("""
+            wcur.execute(
+                """
                 INSERT INTO listing_feedback (contract, year, make, model, engine_verdict,
-                    engine_value, engine_max_bid, actual_sale_price, notes, updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
+                    engine_value, engine_max_bid, actual_sale_price, engine_mode, notes, updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'auto',%s, NOW())
                 ON CONFLICT (contract) DO UPDATE SET
                     engine_verdict=EXCLUDED.engine_verdict, engine_value=EXCLUDED.engine_value,
                     engine_max_bid=EXCLUDED.engine_max_bid, actual_sale_price=EXCLUDED.actual_sale_price,
-                    notes=EXCLUDED.notes, updated_at=NOW()
+                    engine_mode='auto', notes=EXCLUDED.notes, updated_at=NOW()
                 WHERE listing_feedback.notes LIKE '[auto]%%'
-            """, _feedback_params(rec, call))
+            """,
+                _feedback_params(rec, call),
+            )
             conn.commit()
             wcur.close()
         imported += 1
 
     mae = round(sum(abs(e) for e in errs) / len(errs), 1) if errs else None
     bias = round(sum(errs) / len(errs), 1) if errs else None
-    print(f"\n{'DRY RUN — ' if dry_run else ''}imported {imported}, skipped {skipped} "
-          f"(thin comps / unpriceable) of {len(records)} sold records")
+    print(
+        f"\n{'DRY RUN — ' if dry_run else ''}imported {imported}, skipped {skipped} "
+        f"(thin comps / unpriceable) of {len(records)} sold records"
+    )
     if mae is not None:
-        print(f"max-bid vs actual auction price — MAE {mae}% · bias {bias}% "
-              f"(negative = engine bids below the realized price, expected from margin)")
+        print(
+            f"max-bid vs actual auction price — MAE {mae}% · bias {bias}% "
+            f"(negative = engine bids below the realized price, expected from margin)"
+        )
     conn.close()
     return {"imported": imported, "skipped": skipped, "mae": mae, "bias": bias}
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Import realized auction outcomes into calibration")
-    ap.add_argument("--limit", type=int, default=100, help="Max sold records (most recent)")
+    ap = argparse.ArgumentParser(
+        description="Import realized auction outcomes into calibration"
+    )
+    ap.add_argument(
+        "--limit", type=int, default=100, help="Max sold records (most recent)"
+    )
     ap.add_argument("--make", default=None, help="Restrict to one make (e.g. FORD)")
-    ap.add_argument("--min-comps", type=int, default=3, help="Skip records with fewer comps")
-    ap.add_argument("--dry-run", action="store_true", help="Compute + summarize; don't write")
+    ap.add_argument(
+        "--min-comps", type=int, default=3, help="Skip records with fewer comps"
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true", help="Compute + summarize; don't write"
+    )
     a = ap.parse_args()
-    import_outcomes(limit=a.limit, make=a.make, min_comps=a.min_comps, dry_run=a.dry_run)
+    import_outcomes(
+        limit=a.limit, make=a.make, min_comps=a.min_comps, dry_run=a.dry_run
+    )

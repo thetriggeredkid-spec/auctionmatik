@@ -167,7 +167,10 @@ function P_Comps({ v, onScan, scanState, onFlag }) {
                   {cm.url
                     ? <a href={cm.url} target="_blank" rel="noopener" style={{ color: "var(--accent-text)", textDecoration: "none" }}>{cm.y} {cm.mk} {cm.md}{cm.trim ? " " + cm.trim : ""} ↗</a>
                     : <span>{cm.y} {cm.mk} {cm.md}{cm.trim ? " " + cm.trim : ""}</span>}
-                  {cm.src && <div className="eyebrow" style={{ fontSize: 9, marginTop: 2 }}>{cm.src}{cm.trim ? "" : " · trim n/a"}</div>}
+                  <div className="row gap8" style={{ alignItems: "center", marginTop: 2 }}>
+                    {cm.realized && <span className="chip" style={{ fontSize: 9, background: "var(--bid-tint)", borderColor: "transparent", color: "var(--bid)" }}>SOLD · full weight</span>}
+                    {cm.src && <span className="eyebrow" style={{ fontSize: 9 }}>{cm.src}{cm.trim ? "" : " · trim n/a"}</span>}
+                  </div>
                 </div>
               </div>
             </td>
@@ -526,6 +529,7 @@ function P_Correct({ v, onSave }) {
       const f = await onSave({
         year: v.year, make: v.make, model: v.model,
         engineVerdict: v.verdict, engineValue: v.value, engineMaxBid: v.maxBid,
+        engineMode: v.engineMode,   // which engine produced this call → splits calibration tracks
         actualSale: actual === "" ? null : actual,
         correctedValue: val === "" ? null : val,
         correctedMaxBid: bid === "" ? null : bid,
@@ -555,7 +559,13 @@ function P_Correct({ v, onSave }) {
   return (
     <div className="stack">
       <div className="card-2" style={{ padding: "16px 18px" }}>
-        <span className="eyebrow">Engine's call (for reference)</span>
+        <span className="eyebrow">Engine's call (for reference){v.engineMode ? " · " + (v.engineMode === "rules" ? "deterministic" : v.engineMode) : ""}</span>
+        {v.engineMode === "rules" && (
+          <div className="faint" style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+            This is the deterministic/triage call. For calibration that matters, run a <b>deep</b>
+            appraisal first, then record your correction against it.
+          </div>
+        )}
         <div className="row gap24 wrap" style={{ marginTop: 8 }}>
           <Stat label="verdict" value={v.verdict || "—"} />
           <Stat label={v.valueBasis || "value"} value={window.fmt(v.value)} />

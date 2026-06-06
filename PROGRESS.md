@@ -62,8 +62,22 @@ DB is local Docker Postgres (32 MB, ~12.5k rows) — fine for now; revisit hoste
 when building the Chrome extension or needing off-Mac / multi-user access.
 
 ## Current direction / next actions
-1. **Calibrate from the sale** — use the Correct tab on real outcomes; flag bad comps; mine
-   `listing_feedback` for recurring patterns → turn into framework fixes.
+0. **Personal sold log → realized comps** ✅ (`db/migrate_personal_sales.sql`) — hand-entered past
+   sales (year/make/model/trim/km/condition/sale price/date) via the top-bar **◉ sold log** view
+   (`/api/personal_sales` GET/POST/DELETE). They join the deep-mode comp pool as **realized comps**:
+   `comp_scrutiny` weights them above scraped asks (+0.30 similarity), skips the days-on-market
+   discount (a sale isn't an ask), never trims them as price outliers, and labels them **SOLD · full
+   weight** in the Comps tab + "YOUR SALE" in the AI narrative. This is the highest-leverage data we
+   can add — real transaction prices that both anchor deep mode and seed retail calibration as they
+   accumulate. Adding/deleting one invalidates the det + deep caches. **Backlog toward the goal:**
+   the remaining Tier-1 items are *comp-data quality fixes* (km/posted_at/Kijiji — many scrutiny
+   levers are inert without them) and *vision on comps*; then VIN decode + recency weighting (Tier 2).
+1. **Calibrate from the sale** — the loop is now **two-track + deep-aware** (see "Calibration split
+   into two tracks" below). Remaining: (a) **accumulate deep/retail corrections** — open vehicles,
+   run **deep**, record the true value in the Correct tab so Track 1 fills up (only 1 outcome so far);
+   (b) once there's volume, mine Track 1 for recurring patterns → framework fixes; flag bad comps.
+   **Blocked-ish on data:** the retail comp pool is thin (980 listings, only 251 with km, almost no
+   Kijiji) — growing it is a *separate effort* but caps how accurate deep can get.
 2. **Vision on comps** (proposed) — auto-assess each comp's photos to catch damaged comps the way
    flagging does manually (the deeper fix for comp misreads).
 3. **Carfax on a server** — current local agent works; the planned **Chrome extension** version
@@ -81,6 +95,21 @@ when building the Chrome extension or needing off-Mac / multi-user access.
   corrections (`listing_feedback`). Retail-value & max-bid MAE + signed bias, verdict accuracy,
   bias **by make** and **by price band**, a per-sample table (click → open card), CSV export
   (`/api/calibration`, `/api/calibration.csv`). Use it to find systematic error for the methodology rewrite.
+- **Calibration split into two tracks** (`db/migrate_feedback_mode.sql` — adds `engine_mode` to
+  `listing_feedback`). The dashboard previously *mixed* two incompatible truths into one bias number;
+  now they're separated and the loop is **deep-aware**:
+  - **Track 1 — Deep / retail corrections** (the signal that matters): your **Correct**-tab entries,
+    engine value vs your corrected retail value. Each feedback row now records the **mode** that
+    produced the call (`deep`/`triage`/`rules`), so we can confirm we're scoring the deep pass. The
+    Correct tab nudges you to run **deep** before correcting.
+  - **Track 2 — Wholesale backtest** (a triage/comp-engine baseline): the auto-imported
+    `collector.import_outcomes` rows (tagged `engine_mode='auto'`), engine max bid vs actual Regal
+    hammer price. Clearly labeled **margin-affected** (the bid sits below the hammer by design) and
+    built off the shoddy wholesale data — NOT a measure of deep accuracy.
+  Each track has its own make/band segments + verdict accuracy + mode breakdown so they never pollute
+  each other (`mapper.calibration()`); CSV gains `track` + `engine_mode` columns. **Why the split
+  matters:** triage rides the wholesale Regal data and is expected-weak; deep/retail is where accuracy
+  lives but is data-starved (1 logged outcome). Calibrating from real sales = log deep corrections.
 - **Prep-this-sale** (B4) — lane **⚙ Prep sale** runs a bounded, idempotent background batch
   (photos+vision default; Carfax/comps opt-in) over the first N by lot, with live progress + cancel.
 - **Settings / profile editor** — top-bar **⚙ settings** view: editable **buyer profiles**

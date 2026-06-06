@@ -141,6 +141,7 @@ function TopBar({ theme, setTheme, mode, setMode, profile, setProfile, view, set
               <button className={view === "lane" ? "on" : ""} onClick={() => setView("lane")}>▤ lane</button>
               <button className={view === "card" ? "on" : ""} onClick={() => setView("card")}>▦ card</button>
               <button className={view === "calib" ? "on" : ""} onClick={() => setView("calib")}>◎ calibration</button>
+              <button className={view === "sold" ? "on" : ""} onClick={() => setView("sold")}>◉ sold log</button>
               <button className={view === "settings" ? "on" : ""} onClick={() => setView("settings")}>⚙ settings</button>
             </span>
           </div>
@@ -438,66 +439,225 @@ function CalibrationView({ onOpen }) {
     </div>
   );
 
+  const Modes = ({ modes }) => (modes && modes.length) ? (
+    <div className="row gap8 wrap" style={{ marginTop: 2 }}>
+      {modes.map((m, i) => (
+        <span key={i} className="chip" style={{ fontSize: 11 }}>{m.mode} · {m.n}</span>
+      ))}
+    </div>
+  ) : null;
+
+  const r = data.retail || {}, w = data.wholesale || {};
+
   return (
     <div className="shell" style={{ paddingTop: 26 }}>
-      <div className="rise row between wrap" style={{ marginBottom: 22, alignItems: "flex-end", gap: 16 }}>
+      <div className="rise row between wrap" style={{ marginBottom: 8, alignItems: "flex-end", gap: 16 }}>
         <div className="col" style={{ gap: 7 }}>
-          <span className="eyebrow">Engine vs reality · {data.total} recorded correction{data.total === 1 ? "" : "s"}</span>
+          <span className="eyebrow">Engine vs reality · {data.total} recorded outcome{data.total === 1 ? "" : "s"}</span>
           <h1 className="display" style={{ fontSize: 34 }}>Calibration</h1>
         </div>
         <a className="btn" href="/api/calibration.csv">⬇ Export CSV</a>
       </div>
+      <div className="faint rise" style={{ fontSize: 12, marginBottom: 20, maxWidth: 720, lineHeight: 1.55 }}>
+        Two separate tracks — they measure different engines and must not be averaged together.
+        MAE = average miss size · Bias = direction (negative = engine low, positive = engine high).
+      </div>
 
-      {data.total === 0 ? (
-        <div className="card-2 rise" style={{ padding: 28, textAlign: "center" }}>
-          <div style={{ fontSize: 14, marginBottom: 6 }}>No corrections recorded yet.</div>
-          <div className="dim" style={{ fontSize: 13, maxWidth: 460, margin: "0 auto", lineHeight: 1.55 }}>
-            As you record actual sale prices + corrections in each vehicle's <b>Correct</b> tab, this
-            page shows where the engine is systematically off — by make and by price band — to guide
-            methodology tuning.
-          </div>
+      <div className="stack">
+        {/* ── Track 1: the signal that matters — deep/retail corrections ── */}
+        <div className="section-head rise"><span className="eyebrow">Track 1 · the one that matters</span>
+          <h2 className="display" style={{ fontSize: 22 }}>Deep / retail corrections</h2></div>
+        <div className="faint rise" style={{ fontSize: 12, marginTop: -8 }}>
+          Your <b>Correct</b>-tab entries: the engine's call vs your true retail value. Log these on
+          <b> deep</b> runs — that's the accuracy we're chasing.
         </div>
-      ) : (
-        <div className="stack">
-          <div className="row gap16 wrap rise">
-            <Metric label="Retail value error" agg={data.value} sub="engine vs corrected value" />
-            <Metric label="Max-bid error" agg={data.bid} sub="engine vs corrected/actual" />
-            <div className="card-2" style={{ padding: "18px 20px", flex: 1, minWidth: 180 }}>
-              <span className="eyebrow">Verdict accuracy</span>
-              <div className="num display" style={{ fontSize: 30, marginTop: 6 }}>
-                {data.verdictAccuracy == null ? "—" : data.verdictAccuracy + "%"}</div>
-              <div className="faint" style={{ fontSize: 11, marginTop: 8 }}>n={data.verdictN}</div>
+        {r.total === 0 ? (
+          <div className="card-2 rise" style={{ padding: 24, textAlign: "center" }}>
+            <div style={{ fontSize: 14, marginBottom: 6 }}>No retail corrections yet.</div>
+            <div className="dim" style={{ fontSize: 13, maxWidth: 480, margin: "0 auto", lineHeight: 1.55 }}>
+              Open a vehicle, run a <b>deep</b> appraisal, and record the true retail value + correct
+              call in its <b>Correct</b> tab. Each one lands here and shows where deep mode is
+              systematically off — by make and price band.
             </div>
           </div>
-          <div className="faint rise" style={{ fontSize: 12, marginTop: -4 }}>
-            MAE = average miss size · Bias = average direction (negative = engine under-values, positive = over-values).
-          </div>
+        ) : (
+          <React.Fragment>
+            <div className="row gap16 wrap rise">
+              <Metric label="Retail value error" agg={r.value} sub="engine value vs your corrected value" />
+              <Metric label="Max-bid error" agg={r.bid} sub="engine bid vs your corrected bid" />
+              <div className="card-2" style={{ padding: "18px 20px", flex: 1, minWidth: 180 }}>
+                <span className="eyebrow">Verdict accuracy</span>
+                <div className="num display" style={{ fontSize: 30, marginTop: 6 }}>
+                  {r.verdictAccuracy == null ? "—" : r.verdictAccuracy + "%"}</div>
+                <div className="faint" style={{ fontSize: 11, marginTop: 8 }}>n={r.verdictN || 0}</div>
+                <Modes modes={r.modes} />
+              </div>
+            </div>
+            <div className="row gap16 wrap">
+              <SegTable title="make" rows={r.byMake} keyLabel="Make" />
+              <SegTable title="price band" rows={r.byBand} keyLabel="Band" />
+            </div>
+          </React.Fragment>
+        )}
 
-          <div className="row gap16 wrap">
-            <SegTable title="make" rows={data.byMake} keyLabel="Make" />
-            <SegTable title="price band" rows={data.byBand} keyLabel="Band" />
+        {/* ── Track 2: wholesale backtest — a triage/comp-engine baseline, margin-affected ── */}
+        <div className="section-head rise" style={{ marginTop: 14 }}><span className="eyebrow">Track 2 · triage baseline</span>
+          <h2 className="display" style={{ fontSize: 22 }}>Wholesale backtest</h2></div>
+        <div className="faint rise" style={{ fontSize: 12, marginTop: -8, maxWidth: 720, lineHeight: 1.55 }}>
+          Auto-imported from {w.total || 0} past Regal sales: the engine's max bid vs the actual hammer
+          price. <b>Margin-affected</b> — the bid sits below the hammer by design — and built off the
+          wholesale data, so read it as a comp/triage baseline, <b>not</b> a measure of deep accuracy.
+        </div>
+        {w.total === 0 ? (
+          <div className="dim rise" style={{ fontSize: 13, padding: "6px 2px" }}>
+            None imported yet. Run <span className="num">python3 -m collector.import_outcomes</span>.
           </div>
+        ) : (
+          <React.Fragment>
+            <div className="row gap16 wrap rise">
+              <Metric label="Max-bid vs hammer" agg={w.bid} sub="engine bid vs actual sale (margin-affected)" />
+              <div className="card-2" style={{ padding: "18px 20px", flex: 1, minWidth: 180 }}>
+                <span className="eyebrow">Verdict accuracy</span>
+                <div className="num display" style={{ fontSize: 30, marginTop: 6 }}>
+                  {w.verdictAccuracy == null ? "—" : w.verdictAccuracy + "%"}</div>
+                <div className="faint" style={{ fontSize: 11, marginTop: 8 }}>n={w.verdictN || 0}</div>
+                <Modes modes={w.modes} />
+              </div>
+            </div>
+            <div className="row gap16 wrap">
+              <SegTable title="make" rows={w.byMake} keyLabel="Make" />
+              <SegTable title="price band" rows={w.byBand} keyLabel="Band" />
+            </div>
+          </React.Fragment>
+        )}
 
-          <div className="card rise" style={{ overflow: "hidden", marginTop: 4 }}>
+        {/* ── Per-sample table (both tracks, tagged) ── */}
+        {data.samples && data.samples.length ? (
+          <div className="card rise" style={{ overflow: "hidden", marginTop: 10 }}>
             <table className="tbl">
-              <thead><tr><th style={{ paddingLeft: 20 }}>Vehicle</th><th>Engine val</th><th>Truth</th>
-                <th>Val err</th><th>Engine bid</th><th>Bid err</th><th>Note</th></tr></thead>
+              <thead><tr><th style={{ paddingLeft: 20 }}>Vehicle</th><th>Track</th><th>Mode</th>
+                <th>Engine val</th><th>Truth</th><th>Val err</th><th>Engine bid</th><th>Bid err</th><th>Note</th></tr></thead>
               <tbody>{data.samples.map((s, i) => {
-                const truth = s.correctedValue != null ? s.correctedValue : s.actualSale;
+                const truth = s.track === "retail" ? s.correctedValue : s.actualSale;
                 return (
                   <tr key={i} className="lane-row" style={{ cursor: "pointer" }} onClick={() => onOpen && onOpen(s.contract)}>
                     <td style={{ paddingLeft: 20, fontWeight: 600 }}>{s.year} {s.make} {s.model}
                       <div className="num faint" style={{ fontSize: 10 }}>#{s.contract}</div></td>
+                    <td><span className="chip" style={{ fontSize: 10 }}>{s.track}</span></td>
+                    <td className="dim" style={{ fontSize: 11 }}>{s.engineMode || "—"}</td>
                     <td className="num">{window.fmt(s.engineValue)}</td>
                     <td className="num">{window.fmt(truth)}</td>
                     <td className="num" style={{ color: biasColor(s.valueErrPct), fontWeight: 600 }}>{pct(s.valueErrPct)}</td>
                     <td className="num dim">{window.fmt(s.engineMaxBid)}</td>
                     <td className="num" style={{ color: biasColor(s.bidErrPct), fontWeight: 600 }}>{pct(s.bidErrPct)}</td>
-                    <td className="dim" style={{ fontSize: 12, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.notes}</td>
+                    <td className="dim" style={{ fontSize: 12, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.notes}</td>
                   </tr>);
               })}</tbody>
             </table>
           </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ◉ Sold log — your own past sales, the strongest retail comps (real transaction prices) */
+function SoldLogView() {
+  const [sales, setSales] = useStateApp(null);
+  const [err, setErr] = useStateApp(null);
+  const [saving, setSaving] = useStateApp(false);
+  const blank = { year: "", make: "", model: "", trim: "", km: "", condition: "", salePrice: "", soldDate: "", notes: "" };
+  const [f, setF] = useStateApp(blank);
+
+  const load = () => fetch("/api/personal_sales", { headers: { Accept: "application/json" } })
+    .then((r) => r.json()).then((d) => setSales(d.sales || [])).catch(() => setErr("could not load sold log"));
+  useEffectApp(() => { load(); }, []);
+
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  async function add() {
+    if (!f.salePrice || !f.make || !f.model) return;
+    setSaving(true);
+    try {
+      await fetch("/api/personal_sales", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f),
+      });
+      setF(blank); await load();
+    } finally { setSaving(false); }
+  }
+  async function del(id) {
+    await fetch("/api/personal_sales/" + id, { method: "DELETE" });
+    await load();
+  }
+
+  const field = {
+    fontFamily: "Spline Sans Mono, monospace", fontSize: 13, width: "100%",
+    padding: "8px 10px", borderRadius: "var(--r-sm)", border: "1px solid var(--border)",
+    background: "var(--surface-2)", color: "var(--text)",
+  };
+  const F = ({ label, k, type = "text", ph }) => (
+    <div className="col" style={{ gap: 4 }}>
+      <span className="eyebrow">{label}</span>
+      <input type={type} value={f[k]} onChange={set(k)} placeholder={ph || ""} style={field} />
+    </div>
+  );
+
+  if (err) return <div className="shell" style={{ paddingTop: 60 }}><span className="dim">{err}</span></div>;
+
+  return (
+    <div className="shell" style={{ paddingTop: 26 }}>
+      <div className="rise col" style={{ gap: 7, marginBottom: 10 }}>
+        <span className="eyebrow">Your realized sales · {sales ? sales.length : 0} on record</span>
+        <h1 className="display" style={{ fontSize: 34 }}>Sold log</h1>
+      </div>
+      <div className="faint rise" style={{ fontSize: 12, marginBottom: 20, maxWidth: 720, lineHeight: 1.55 }}>
+        Your own past sales are the strongest comps there are — real transaction prices, not asking
+        prices. They feed the deep-mode anchor at <b>full weight</b> (above scraped listings) for
+        matching year/make/model, and seed retail calibration as the set grows.
+      </div>
+
+      <div className="card-2 rise" style={{ padding: "18px 20px", marginBottom: 22 }}>
+        <span className="eyebrow">Add a sale</span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12, marginTop: 10 }}>
+          <F label="year" k="year" type="number" ph="2019" />
+          <F label="make" k="make" ph="FORD" />
+          <F label="model" k="model" ph="F-150" />
+          <F label="trim" k="trim" ph="XLT" />
+          <F label="km" k="km" type="number" ph="120000" />
+          <F label="condition" k="condition" ph="clean / rough" />
+          <F label="sale price $" k="salePrice" type="number" ph="28500" />
+          <F label="sold date" k="soldDate" type="date" />
+        </div>
+        <div className="col" style={{ gap: 4, marginTop: 12 }}>
+          <span className="eyebrow">notes</span>
+          <input value={f.notes} onChange={set("notes")} placeholder="optional — channel, buyer, anything useful" style={field} />
+        </div>
+        <div className="row between" style={{ alignItems: "center", marginTop: 14 }}>
+          <span className="faint" style={{ fontSize: 11 }}>make, model + sale price required</span>
+          <button className="btn accent" disabled={saving || !f.salePrice || !f.make || !f.model} onClick={add}>
+            {saving ? "Saving…" : "Add sale"}
+          </button>
+        </div>
+      </div>
+
+      {!sales ? <LaneLoading /> : sales.length === 0 ? (
+        <div className="dim rise" style={{ fontSize: 13 }}>No sales logged yet — add your first above.</div>
+      ) : (
+        <div className="card rise" style={{ overflow: "hidden" }}>
+          <table className="tbl">
+            <thead><tr><th style={{ paddingLeft: 20 }}>Vehicle</th><th>KM</th><th>Condition</th>
+              <th>Sold for</th><th>Date</th><th>Notes</th><th></th></tr></thead>
+            <tbody>{sales.map((s) => (
+              <tr key={s.id}>
+                <td style={{ paddingLeft: 20, fontWeight: 600 }}>{s.year} {s.make} {s.model}
+                  {s.trim ? <span className="dim"> {s.trim}</span> : null}</td>
+                <td className="num dim">{s.km ? s.km.toLocaleString() : "—"}</td>
+                <td className="dim" style={{ fontSize: 12 }}>{s.condition || "—"}</td>
+                <td className="num" style={{ fontWeight: 600 }}>{window.fmt(s.salePrice)}</td>
+                <td className="num dim" style={{ fontSize: 12 }}>{s.soldDate || "—"}</td>
+                <td className="dim" style={{ fontSize: 12, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.notes}</td>
+                <td><button className="btn" style={{ padding: "3px 9px", fontSize: 12 }} onClick={() => del(s.id)}>✕</button></td>
+              </tr>))}</tbody>
+          </table>
         </div>
       )}
     </div>
@@ -759,6 +919,8 @@ function App() {
         onReload={() => loadSale(selected, null)} />
       {view === "settings"
         ? <SettingsView />
+        : view === "sold"
+        ? <SoldLogView />
         : view === "calib"
         ? <CalibrationView onOpen={openByContract} />
         : view === "lane"
