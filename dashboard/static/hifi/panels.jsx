@@ -655,6 +655,11 @@ function P_Inputs({ v, onSave }) {
 
       <div className="card-2" style={{ padding: "18px 20px" }}>
         <span className="eyebrow">Spec</span>
+        {v.vinFilled && v.vinFilled.length > 0 && (
+          <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>
+            VIN factory decode filled blanks: <b>{v.vinFilled.join(", ")}</b>
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, marginTop: 10 }}>
           <Txt k="trim" label="trim" /><Txt k="cab" label="cab" /><Txt k="bed" label="bed" />
           <Txt k="driveline" label="driveline" /><Txt k="engine" label="engine" /><Txt k="km" label="odometer (km)" />

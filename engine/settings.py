@@ -63,6 +63,7 @@ def _read_engine_defaults() -> dict:
             "deep_autorun_vision": True,
             "deep_autocollect_comps": True,
             "deep_vision_comps": False,  # OFF by default — extra Haiku calls + latency per deep run
+            "vin_decode": True,  # gap-fill spec from the VIN's NHTSA factory decode (cached)
             "vision_photo_cap": 30,
             "prep_default_limit": 25,
         },

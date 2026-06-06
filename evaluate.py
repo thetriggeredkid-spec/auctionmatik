@@ -547,6 +547,39 @@ def _apply_vision_spec(vehicle: dict, va: dict):
 # ── Recommendation Engine integration ─────────────────────────────────────────
 
 
+_VIN_DECODE_FIELDS = (
+    "trim",
+    "driveline",
+    "engine",
+    "cab",
+    "bed",
+    "fuel_type",
+    "transmission",
+)
+
+
+def apply_vin_decode(conn, vehicle: dict, allow_fetch: bool = True) -> dict | None:
+    """Gap-fill the spec from the VIN's factory decode (NHTSA, cached). Fills ONLY blank
+    fields — present scrape values and operator overrides win. `allow_fetch=False` serves
+    cache only (fast lane screening). Returns the decode dict (or None) for transparency.
+    """
+    from collector.vin_decode import decode_vin
+
+    decoded = decode_vin(vehicle.get("vin"), conn=conn, allow_fetch=allow_fetch)
+    if not decoded:
+        return None
+    filled = []
+    for k in _VIN_DECODE_FIELDS:
+        if not vehicle.get(k) and decoded.get(k):
+            vehicle[k] = decoded[k]
+            filled.append(k)
+    vehicle["_vin_decoded"] = {
+        k: decoded.get(k) for k in _VIN_DECODE_FIELDS if decoded.get(k)
+    }
+    vehicle["_vin_filled"] = filled
+    return decoded
+
+
 def _coerce_json(val):
     """A JSONB column comes back as a dict; a text column as a str — normalize to dict/None."""
     if isinstance(val, str):
@@ -847,8 +880,13 @@ def main():
             print(f"\nError: No listing found for contract {args.contract}")
             sys.exit(1)
 
-    # 2. Parse into vehicle spec
+    # 2. Parse into vehicle spec, then gap-fill blanks from the VIN's factory decode.
     vehicle = parse_listing_to_vehicle(listing_raw)
+    _vin_decoded = apply_vin_decode(conn, vehicle)
+    if _vin_decoded and vehicle.get("_vin_filled"):
+        print(
+            f"  [VIN] filled from factory decode: {', '.join(vehicle['_vin_filled'])}"
+        )
 
     print(f"\n{'═' * 60}")
     print(

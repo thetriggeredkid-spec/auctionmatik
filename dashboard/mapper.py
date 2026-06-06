@@ -34,6 +34,7 @@ from evaluate import (
     _get_subject_vision,
     _apply_vision_spec,
     _advisor_anchor,
+    apply_vin_decode,
 )
 
 REGAL_DETAIL_URL = "https://regalauctions.com/inventory.php?a=details&contract="
@@ -491,6 +492,12 @@ def evaluate(
 
     vehicle = parse_listing_to_vehicle(raw)
     vehicle.update(prompt_condition(vehicle, skip=True))
+    # VIN factory spec gap-fills blanks (driveline/engine/cab/trim/…) before vision/overrides.
+    # Live NHTSA fetch only off the lane (ai_mode set); bulk screening serves cache only.
+    from engine import settings as _st
+
+    if _st.engine_flag("vin_decode", True):
+        apply_vin_decode(conn, vehicle, allow_fetch=ai_mode is not None)
     va = _get_subject_vision(conn, contract) or {}
     if not va and ai_mode == "deep":
         _p("Reading listing photos")
@@ -1788,6 +1795,9 @@ def _to_design(
         "type": vehicle.get("vehicle_type") or "Vehicle",
         "km": vehicle.get("odometer_km") or 0,
         "vin": vehicle.get("vin") or "",
+        "vinFilled": vehicle.get("_vin_filled")
+        or [],  # spec fields filled from the VIN decode
+        "vinDecoded": vehicle.get("_vin_decoded") or None,
         "color": vehicle.get("color") or "—",
         "engine": vehicle.get("engine") or "—",
         "trans": vehicle.get("transmission") or "—",

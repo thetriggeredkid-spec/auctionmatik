@@ -98,6 +98,17 @@ when building the Chrome extension or needing off-Mac / multi-user access.
    calls + latency; toggle in Settings). Verified: injecting a flood/frame read on a comp drops it
    from the anchor with the right reason. Remaining caveat: only ~26% of comps have photo galleries
    (collection depth), so Part B's reach is capped until the comp pool is deepened.
+2b. **VIN decode (NHTSA)** ✅ (`db/migrate_vin_decode.sql`, `collector/vin_decode.py`) — methodology
+   §3.1. Decodes the VIN via the free NHTSA vPIC API (no key), normalizes to our spec keys
+   (driveline/engine/cab/bed/fuel/trim←Trim|Series), and **caches** in `vin_decode` (one fetch per VIN).
+   `evaluate.apply_vin_decode` **gap-fills only blank** spec fields — present scrape values and
+   operator overrides always win — and is called in both the dashboard (`mapper.evaluate`, after parse,
+   before vision) and the CLI. Live NHTSA fetch happens off the lane (`ai_mode` set / card open); bulk
+   lane screening serves cache only so it stays fast. Gated by the **`vin_decode`** setting (default ON,
+   Settings toggle); the Inputs tab shows which fields the VIN filled (`vinFilled`). Verified live:
+   driveline/engine/cab/fuel decode reliably; **trim is often blank from NHTSA** (we fall back to Series
+   and otherwise leave the scrape's trim) — so it hardens the reliable fields, not trim. The biggest
+   win is on sparse Regal scrapes (missing driveline/engine), which now fill from the factory build.
 3. **Carfax on a server** — current local agent works; the planned **Chrome extension** version
    sidesteps reCAPTCHA. (Hybrid worker / managed scraping browser are the server-side options.)
 4. Optional: collector to store trim/body columns on scrape; per-vehicle "Load photos" enrichment;
