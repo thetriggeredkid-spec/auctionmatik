@@ -72,6 +72,15 @@ when building the Chrome extension or needing off-Mac / multi-user access.
    accumulate. Adding/deleting one invalidates the det + deep caches. **Backlog toward the goal:**
    the remaining Tier-1 items are *comp-data quality fixes* (km/posted_at/Kijiji — many scrutiny
    levers are inert without them) and *vision on comps*; then VIN decode + recency weighting (Tier 2).
+0b. **Comp km parser — robustness + bug fix** ✅ (`collector/retail_comps._parse_km_text`) — fixed a
+   real bug where European-style `72.000 km` parsed as **72 km**; now handles `139k`, `72 000`,
+   `12.5k`, miles→km, sanity-bounds 100–1,000,000, and falls back to title/description when the
+   subtitle block is absent. **Diagnosis that matters more than the fix:** the km gap is NOT a parser
+   problem — only **26%** of FB rows are detail-scraped (have a subtitle block), and of those **95%**
+   already get km. The other 74% are search-level rows with no subtitle/description/km at all. Kijiji
+   isn't broken either (all 3 rows have km) — it's just been run once. So growing comp coverage is an
+   **operational** task: re-pull with `includeListingDetails` + run Kijiji broadly for the lane's
+   makes/models. The parser fix only helps detail-scraped rows + all future scrapes.
 1. **Calibrate from the sale** — the loop is now **two-track + deep-aware** (see "Calibration split
    into two tracks" below). Remaining: (a) **accumulate deep/retail corrections** — open vehicles,
    run **deep**, record the true value in the Correct tab so Track 1 fills up (only 1 outcome so far);

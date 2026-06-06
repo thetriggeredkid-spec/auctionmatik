@@ -45,8 +45,8 @@ MAX_RESULTS_CAP = 40
 # Alberta FB Marketplace city URLs
 FB_CITY_URLS = {
     "edmonton": "https://www.facebook.com/marketplace/edmonton/",
-    "calgary":  "https://www.facebook.com/marketplace/calgary/",
-    "alberta":  "https://www.facebook.com/marketplace/edmonton/",
+    "calgary": "https://www.facebook.com/marketplace/calgary/",
+    "alberta": "https://www.facebook.com/marketplace/edmonton/",
 }
 
 KIJIJI_AB_CARS_URL = "https://www.kijiji.ca/b-cars-trucks/alberta/c174l9003"
@@ -54,10 +54,13 @@ KIJIJI_AB_CARS_URL = "https://www.kijiji.ca/b-cars-trucks/alberta/c174l9003"
 
 # ── Apify helpers ────────────────────────────────────────────────────────────
 
+
 def _run_actor(actor_id: str, input_data: dict, timeout_secs: int = 300) -> list[dict]:
     """Run an Apify actor and return the dataset items."""
     if not APIFY_TOKEN:
-        raise RuntimeError("APIFY_TOKEN not set in .env — get yours at https://console.apify.com/account/integrations")
+        raise RuntimeError(
+            "APIFY_TOKEN not set in .env — get yours at https://console.apify.com/account/integrations"
+        )
 
     headers = {"Authorization": f"Bearer {APIFY_TOKEN}"}
 
@@ -98,13 +101,26 @@ def _run_actor(actor_id: str, input_data: dict, timeout_secs: int = 300) -> list
 
 # ── Facebook Marketplace ─────────────────────────────────────────────────────
 
-def _build_fb_url(location: str, query: str, min_year=None, max_year=None,
-                  min_price=None, max_price=None) -> str:
-    base = FB_CITY_URLS.get(location.lower(), f"https://www.facebook.com/marketplace/{location.lower()}/")
+
+def _build_fb_url(
+    location: str,
+    query: str,
+    min_year=None,
+    max_year=None,
+    min_price=None,
+    max_price=None,
+) -> str:
+    base = FB_CITY_URLS.get(
+        location.lower(), f"https://www.facebook.com/marketplace/{location.lower()}/"
+    )
     url = f"{base}search/?query={query.replace(' ', '+')}&exact=false"
     # FB Marketplace honours these as URL params — lets us target the subject's generation.
-    for k, v in (("minPrice", min_price), ("maxPrice", max_price),
-                 ("minYear", min_year), ("maxYear", max_year)):
+    for k, v in (
+        ("minPrice", min_price),
+        ("maxPrice", max_price),
+        ("minYear", min_year),
+        ("maxYear", max_year),
+    ):
         if v:
             url += f"&{k}={v}"
     return url
@@ -118,7 +134,9 @@ def _parse_fb_price(price_obj) -> int | None:
         amount = price_obj.get("amount")
         if amount is not None:
             return int(round(float(str(amount).replace(",", "")) * 100))
-        formatted = price_obj.get("formatted_amount") or price_obj.get("formatted_price") or ""
+        formatted = (
+            price_obj.get("formatted_amount") or price_obj.get("formatted_price") or ""
+        )
         cleaned = re.sub(r"[^\d.]", "", formatted)
         if cleaned:
             return int(round(float(cleaned) * 100))
@@ -127,23 +145,53 @@ def _parse_fb_price(price_obj) -> int | None:
     return None
 
 
+def _parse_km_text(text: str) -> int | None:
+    """Parse an odometer from free text. Handles '259K km', '140,000 km',
+    European '72.000 km' (= 72,000 — NOT 72), '72 000 km', '12.5k km', and miles.
+    Sanity-bounded to 100–1,000,000 km so the European-decimal bug can't slip a 72 through.
+    """
+    if not text:
+        return None
+    m = re.search(
+        r"(\d[\d.,\s]*?)\s*([kK])?\s*(km|kms|kilometre?s?|mi|miles)\b", text, re.I
+    )
+    if not m:
+        return None
+    num_raw, k_suffix, unit = m.group(1).strip(), m.group(2), m.group(3)
+    try:
+        if k_suffix:  # '139k' / '12.5k' → ×1000
+            num = float(num_raw.replace(",", "").replace(" ", "")) * 1000
+        else:  # strip thousands separators (, . space)
+            cleaned = re.sub(r"[.,\s]", "", num_raw)
+            if not cleaned.isdigit():
+                return None
+            num = float(cleaned)
+    except ValueError:
+        return None
+    if unit.lower().startswith("mi"):  # miles → km
+        num *= 1.60934
+    km = int(num)
+    return km if 100 <= km <= 1_000_000 else None
+
+
 def _parse_odometer_from_subtitles(subtitles) -> int | None:
     """FB shows mileage in the listing subtitle, e.g. '259K km' or '140,000 km'."""
     for s in subtitles or []:
         text = (s.get("subtitle") if isinstance(s, dict) else str(s)) or ""
-        m = re.search(r"([\d,.]+)\s*([kK])?\s*(km|kms|mi|miles)\b", text)
-        if not m:
-            continue
-        try:
-            num = float(m.group(1).replace(",", ""))
-        except ValueError:
-            continue
-        if m.group(2):                       # 'K' suffix → thousands
-            num *= 1000
-        if m.group(3).lower().startswith("mi"):   # miles → km
-            num *= 1.60934
-        return int(num)
+        km = _parse_km_text(text)
+        if km is not None:
+            return km
     return None
+
+
+def _fb_odometer(item: dict, title: str | None, desc: str | None) -> int | None:
+    """Odometer from the subtitle block first (most reliable), then the title/description
+    as a fallback — many search-level rows carry km only in the title."""
+    return (
+        _parse_odometer_from_subtitles(item.get("customSubTitlesWithRenderingFlags"))
+        or _parse_km_text(title or "")
+        or _parse_km_text(desc or "")
+    )
 
 
 def _extract_fb_photos(item: dict) -> tuple[list[str], str | None]:
@@ -173,7 +221,9 @@ def _parse_fb_item(item: dict) -> dict | None:
     if not price_cents or price_cents <= 0:
         return None
 
-    title = _fb_text(item.get("listingTitle")) or _fb_text(item.get("customTitle")) or ""
+    title = (
+        _fb_text(item.get("listingTitle")) or _fb_text(item.get("customTitle")) or ""
+    )
     year, make, model = _parse_vehicle_title(title)
 
     # Location: prefer "Edmonton, AB" locationText, fall back to reverse_geocode
@@ -188,9 +238,9 @@ def _parse_fb_item(item: dict) -> dict | None:
         geo = (item.get("location") or {}).get("reverse_geocode") or {}
         city, province = geo.get("city"), geo.get("state")
 
-    odometer_km = _parse_odometer_from_subtitles(item.get("customSubTitlesWithRenderingFlags"))
-
     desc = _fb_text(item.get("description"))
+
+    odometer_km = _fb_odometer(item, title, desc)
 
     posted_at = None
     ts = item.get("timestamp")
@@ -221,7 +271,7 @@ def _parse_fb_item(item: dict) -> dict | None:
         "asking_price": price_cents,
         "location_city": city,
         "location_province": province,
-        "seller_type": None,   # not exposed by this actor; left for vision/enrichment
+        "seller_type": None,  # not exposed by this actor; left for vision/enrichment
         "listing_url": item.get("itemUrl"),
         "description": desc,
         "is_sold": bool(item.get("isSold", False)),
@@ -233,8 +283,15 @@ def _parse_fb_item(item: dict) -> dict | None:
     }
 
 
-def collect_facebook(location: str, query: str, max_listings: int = 20,
-                     min_year=None, max_year=None, min_price=None, max_price=None) -> int:
+def collect_facebook(
+    location: str,
+    query: str,
+    max_listings: int = 20,
+    min_year=None,
+    max_year=None,
+    min_price=None,
+    max_price=None,
+) -> int:
     """Collect FB Marketplace listings for a vehicle query (targeted + capped + detailed)."""
     cap = max(1, min(int(max_listings), MAX_RESULTS_CAP))
     print(f"\n[Facebook Marketplace] Searching: '{query}' in {location} (limit {cap})")
@@ -256,6 +313,7 @@ def collect_facebook(location: str, query: str, max_listings: int = 20,
 
 
 # ── Kijiji ───────────────────────────────────────────────────────────────────
+
 
 def _parse_kijiji_price(item: dict) -> int | None:
     """
@@ -365,9 +423,13 @@ def _parse_kijiji_item(item: dict) -> dict | None:
 
     model = (car.get("model") or item.get("model") or "").strip() or None
     trim = (car.get("vehicleConfiguration") or item.get("trim") or "").strip() or None
-    vin = (car.get("vehicleIdentificationNumber") or item.get("vin") or "").strip() or None
+    vin = (
+        car.get("vehicleIdentificationNumber") or item.get("vin") or ""
+    ).strip() or None
     color = (car.get("color") or item.get("color") or "").strip() or None
-    transmission = (car.get("vehicleTransmission") or item.get("transmission") or "").strip() or None
+    transmission = (
+        car.get("vehicleTransmission") or item.get("transmission") or ""
+    ).strip() or None
     body_style = (car.get("bodyType") or item.get("body_style") or "").strip() or None
     fuel_type = (car.get("fuelType") or item.get("fuel_type") or "").strip() or None
 
@@ -376,7 +438,12 @@ def _parse_kijiji_item(item: dict) -> dict | None:
     driveline = _normalize_driveline(driveline_raw)
 
     # Odometer: prefer schemaOrgCar.mileageFromOdometer, fallback to mileageAnalysis
-    odometer_km = _km_from_schema(item) or _km_from_mileage_analysis(item) or item.get("odometer_km") or item.get("mileage")
+    odometer_km = (
+        _km_from_schema(item)
+        or _km_from_mileage_analysis(item)
+        or item.get("odometer_km")
+        or item.get("mileage")
+    )
 
     # Location
     loc = item.get("location") or {}
@@ -493,12 +560,39 @@ def collect_kijiji(url: str = None, max_listings: int = 20) -> int:
 # ── Title parser ─────────────────────────────────────────────────────────────
 
 _COMMON_MAKES = {
-    "toyota", "honda", "ford", "chevrolet", "chevy", "dodge", "jeep",
-    "hyundai", "kia", "nissan", "mazda", "subaru", "volkswagen", "vw",
-    "bmw", "mercedes", "audi", "lexus", "infiniti", "acura",
-    "ram", "gmc", "cadillac", "buick", "lincoln", "chrysler",
-    "mitsubishi", "volvo", "land rover", "landrover", "porsche",
+    "toyota",
+    "honda",
+    "ford",
+    "chevrolet",
+    "chevy",
+    "dodge",
+    "jeep",
+    "hyundai",
+    "kia",
+    "nissan",
+    "mazda",
+    "subaru",
+    "volkswagen",
+    "vw",
+    "bmw",
+    "mercedes",
+    "audi",
+    "lexus",
+    "infiniti",
+    "acura",
+    "ram",
+    "gmc",
+    "cadillac",
+    "buick",
+    "lincoln",
+    "chrysler",
+    "mitsubishi",
+    "volvo",
+    "land rover",
+    "landrover",
+    "porsche",
 }
+
 
 def _parse_vehicle_title(title: str) -> tuple[int | None, str | None, str | None]:
     """Best-effort extraction of year, make, model from a listing title."""
@@ -512,13 +606,13 @@ def _parse_vehicle_title(title: str) -> tuple[int | None, str | None, str | None
     for i, part in enumerate(parts):
         if part.isdigit() and 1990 <= int(part) <= 2030:
             year = int(part)
-            remaining = parts[i + 1:]
+            remaining = parts[i + 1 :]
             for make_name in sorted(_COMMON_MAKES, key=len, reverse=True):
                 mk_parts = make_name.split()
-                chunk = " ".join(remaining[:len(mk_parts)]).lower()
+                chunk = " ".join(remaining[: len(mk_parts)]).lower()
                 if chunk == make_name:
-                    make = " ".join(remaining[:len(mk_parts)]).title()
-                    model_parts = remaining[len(mk_parts):]
+                    make = " ".join(remaining[: len(mk_parts)]).title()
+                    model_parts = remaining[len(mk_parts) :]
                     if model_parts:
                         model = " ".join(model_parts[:2]).title()
                     break
@@ -529,9 +623,11 @@ def _parse_vehicle_title(title: str) -> tuple[int | None, str | None, str | None
 
 # ── DB upsert ────────────────────────────────────────────────────────────────
 
+
 def _upsert_listings(listings: list[dict], source: str) -> int:
     """Upsert parsed listings into retail_listings table. Returns count inserted/updated."""
     import json
+
     if not listings:
         print(f"  No valid listings to upsert for {source}")
         return 0
@@ -542,7 +638,8 @@ def _upsert_listings(listings: list[dict], source: str) -> int:
 
     for row in listings:
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO retail_listings (
                     external_id, source,
                     year, make, model, trim, body_style, vin, color, engine,
@@ -579,10 +676,15 @@ def _upsert_listings(listings: list[dict], source: str) -> int:
                     main_photo_url  = EXCLUDED.main_photo_url,
                     last_seen_at    = NOW(),
                     raw_json        = EXCLUDED.raw_json
-            """, {
-                "photo_urls": None, "photo_count": None, "main_photo_url": None,
-                **row, "raw_json": json.dumps(row["raw_json"]),
-            })
+            """,
+                {
+                    "photo_urls": None,
+                    "photo_count": None,
+                    "main_photo_url": None,
+                    **row,
+                    "raw_json": json.dumps(row["raw_json"]),
+                },
+            )
             upserted += 1
         except Exception as e:
             print(f"  Warning: failed to upsert {row.get('external_id')}: {e}")
@@ -599,23 +701,48 @@ def _upsert_listings(listings: list[dict], source: str) -> int:
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Collect retail vehicle comps via Apify")
-    parser.add_argument("--source", choices=["facebook", "kijiji", "all"], default="all")
-    parser.add_argument("--location", default="edmonton", help="City for FB Marketplace (e.g. edmonton)")
-    parser.add_argument("--query", default="used cars trucks", help="Search query for FB Marketplace")
-    parser.add_argument("--url", default=None, help="Specific Kijiji category/search URL")
-    parser.add_argument("--max", type=int, default=20,
-                        help=f"Max listings per source (hard-capped at {MAX_RESULTS_CAP})")
-    parser.add_argument("--min-year", type=int, default=None, help="FB: minimum model year")
-    parser.add_argument("--max-year", type=int, default=None, help="FB: maximum model year")
-    parser.add_argument("--min-price", type=int, default=None, help="FB: minimum price ($)")
+    parser = argparse.ArgumentParser(
+        description="Collect retail vehicle comps via Apify"
+    )
+    parser.add_argument(
+        "--source", choices=["facebook", "kijiji", "all"], default="all"
+    )
+    parser.add_argument(
+        "--location", default="edmonton", help="City for FB Marketplace (e.g. edmonton)"
+    )
+    parser.add_argument(
+        "--query", default="used cars trucks", help="Search query for FB Marketplace"
+    )
+    parser.add_argument(
+        "--url", default=None, help="Specific Kijiji category/search URL"
+    )
+    parser.add_argument(
+        "--max",
+        type=int,
+        default=20,
+        help=f"Max listings per source (hard-capped at {MAX_RESULTS_CAP})",
+    )
+    parser.add_argument(
+        "--min-year", type=int, default=None, help="FB: minimum model year"
+    )
+    parser.add_argument(
+        "--max-year", type=int, default=None, help="FB: maximum model year"
+    )
+    parser.add_argument(
+        "--min-price", type=int, default=None, help="FB: minimum price ($)"
+    )
     args = parser.parse_args()
 
     total = 0
     if args.source in ("facebook", "all"):
-        total += collect_facebook(args.location, args.query, args.max,
-                                  min_year=args.min_year, max_year=args.max_year,
-                                  min_price=args.min_price)
+        total += collect_facebook(
+            args.location,
+            args.query,
+            args.max,
+            min_year=args.min_year,
+            max_year=args.max_year,
+            min_price=args.min_price,
+        )
     if args.source in ("kijiji", "all"):
         total += collect_kijiji(args.url, args.max)
 
