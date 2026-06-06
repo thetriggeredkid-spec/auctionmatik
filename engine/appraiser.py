@@ -22,6 +22,7 @@ import os
 import json
 
 from dotenv import load_dotenv
+
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 REASONING_MODEL = os.getenv("APPRAISER_MODEL", "claude-sonnet-4-6")
@@ -122,20 +123,38 @@ you're explaining the call to another flipper."""
 OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
-        "mode": {"type": "string", "enum": ["retail_flip", "repair_project", "parts_only", "pass"]},
+        "mode": {
+            "type": "string",
+            "enum": ["retail_flip", "repair_project", "parts_only", "pass"],
+        },
         "verdict": {"type": "string", "enum": ["BID", "BID_TO_FIX", "PASS"]},
-        "value": {"type": "integer", "description": "as-is retail (flip) or after-fix value (project), CAD dollars"},
-        "max_bid": {"type": "integer", "description": "max bid in CAD dollars, never negative"},
+        "value": {
+            "type": "integer",
+            "description": "as-is retail (flip) or after-fix value (project), CAD dollars",
+        },
+        "max_bid": {
+            "type": "integer",
+            "description": "max bid in CAD dollars, never negative",
+        },
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-        "reasoning": {"type": "string", "description": "full narrated thought process, flipper-to-flipper"},
+        "reasoning": {
+            "type": "string",
+            "description": "full narrated thought process, flipper-to-flipper",
+        },
         "key_adjustments": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     "factor": {"type": "string"},
-                    "impact": {"type": "string", "description": "e.g. '-$1,750' or '+2%'"},
-                    "evidence": {"type": "string", "description": "the specific comp/declaration/photo cited"},
+                    "impact": {
+                        "type": "string",
+                        "description": "e.g. '-$1,750' or '+2%'",
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": "the specific comp/declaration/photo cited",
+                    },
                 },
                 "required": ["factor", "impact", "evidence"],
                 "additionalProperties": False,
@@ -147,7 +166,10 @@ OUTPUT_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "action": {"type": "string"},
-                    "decision": {"type": "string", "enum": ["DO", "SKIP", "RESERVE", "REQUIRED"]},
+                    "decision": {
+                        "type": "string",
+                        "enum": ["DO", "SKIP", "RESERVE", "REQUIRED"],
+                    },
                     "cost": {"type": "integer"},
                     "why": {"type": "string"},
                 },
@@ -171,18 +193,37 @@ OUTPUT_SCHEMA = {
             "type": "object",
             "description": "If PASS but it could work under a condition, the bid + the gate. amount 0 if none.",
             "properties": {
-                "amount": {"type": "integer", "description": "bid that works if the condition clears; 0 if no path"},
-                "condition": {"type": "string", "description": "what must be verified first; empty if none"},
+                "amount": {
+                    "type": "integer",
+                    "description": "bid that works if the condition clears; 0 if no path",
+                },
+                "condition": {
+                    "type": "string",
+                    "description": "what must be verified first; empty if none",
+                },
             },
             "required": ["amount", "condition"],
             "additionalProperties": False,
         },
-        "divergence_from_rules": {"type": "string",
-                                  "description": "how/why this differs from the deterministic sanity band"},
+        "divergence_from_rules": {
+            "type": "string",
+            "description": "how/why this differs from the deterministic sanity band",
+        },
     },
-    "required": ["mode", "verdict", "value", "max_bid", "confidence", "reasoning",
-                 "key_adjustments", "recon_plan", "sale_plan", "verify_before_bid",
-                 "conditional_bid", "divergence_from_rules"],
+    "required": [
+        "mode",
+        "verdict",
+        "value",
+        "max_bid",
+        "confidence",
+        "reasoning",
+        "key_adjustments",
+        "recon_plan",
+        "sale_plan",
+        "verify_before_bid",
+        "conditional_bid",
+        "divergence_from_rules",
+    ],
     "additionalProperties": False,
 }
 
@@ -192,27 +233,50 @@ TRIAGE_SCHEMA = {
     "type": "object",
     "properties": {
         "verdict": {"type": "string", "enum": ["BID", "BID_TO_FIX", "PASS"]},
-        "mode": {"type": "string", "enum": ["retail_flip", "repair_project", "parts_only", "pass"]},
+        "mode": {
+            "type": "string",
+            "enum": ["retail_flip", "repair_project", "parts_only", "pass"],
+        },
         "value": {"type": "integer"},
         "max_bid": {"type": "integer"},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-        "summary": {"type": "string", "description": "1-3 sentence rationale, no full narration"},
+        "summary": {
+            "type": "string",
+            "description": "1-3 sentence rationale, no full narration",
+        },
         "top_flags": {"type": "array", "items": {"type": "string"}},
         "conditional_bid": {
             "type": "object",
             "description": "If PASS but it could work under a condition, the bid + the gate. amount 0 if none.",
             "properties": {
-                "amount": {"type": "integer", "description": "bid that works if the condition clears; 0 if no path"},
-                "condition": {"type": "string", "description": "what must be verified first; empty if none"},
+                "amount": {
+                    "type": "integer",
+                    "description": "bid that works if the condition clears; 0 if no path",
+                },
+                "condition": {
+                    "type": "string",
+                    "description": "what must be verified first; empty if none",
+                },
             },
             "required": ["amount", "condition"],
             "additionalProperties": False,
         },
-        "needs_deep_dive": {"type": "boolean",
-                            "description": "true only if a buy candidate with thin evidence worth a full pass"},
+        "needs_deep_dive": {
+            "type": "boolean",
+            "description": "true only if a buy candidate with thin evidence worth a full pass",
+        },
     },
-    "required": ["verdict", "mode", "value", "max_bid", "confidence", "summary", "top_flags",
-                 "conditional_bid", "needs_deep_dive"],
+    "required": [
+        "verdict",
+        "mode",
+        "value",
+        "max_bid",
+        "confidence",
+        "summary",
+        "top_flags",
+        "conditional_bid",
+        "needs_deep_dive",
+    ],
     "additionalProperties": False,
 }
 
@@ -230,82 +294,147 @@ DEEP_HINT = (
 )
 
 
-def _fmt_evidence(subject, comp_narrative, comp_anchor_cents, comp_confidence,
-                  declarations, vision, repair_est, deterministic, profile,
-                  carfax=None, repair_alternatives=None, calibration=None, vmr=None) -> str:
+def _fmt_evidence(
+    subject,
+    comp_narrative,
+    comp_anchor_cents,
+    comp_confidence,
+    declarations,
+    vision,
+    repair_est,
+    deterministic,
+    profile,
+    carfax=None,
+    repair_alternatives=None,
+    calibration=None,
+    vmr=None,
+    ctx=None,
+) -> str:
     L = []
     L.append("## SUBJECT VEHICLE")
-    spec = " · ".join(str(b) for b in (subject.get('trim'), subject.get('cab'), subject.get('bed'),
-                                       subject.get('engine'), subject.get('driveline')) if b)
-    km = f"{subject.get('odometer_km'):,} km" if subject.get('odometer_km') else "km unknown"
-    L.append(f"{subject.get('year')} {subject.get('make')} {subject.get('model')}"
-             + (f" — {spec}" if spec else "") + f" | {km}")
-    L.append(f"Declarations: {subject.get('declarations')} | Auctioneer notes: {subject.get('condition_notes')!r}")
+    spec = " · ".join(
+        str(b)
+        for b in (
+            subject.get("trim"),
+            subject.get("cab"),
+            subject.get("bed"),
+            subject.get("engine"),
+            subject.get("driveline"),
+        )
+        if b
+    )
+    km = (
+        f"{subject.get('odometer_km'):,} km"
+        if subject.get("odometer_km")
+        else "km unknown"
+    )
+    L.append(
+        f"{subject.get('year')} {subject.get('make')} {subject.get('model')}"
+        + (f" — {spec}" if spec else "")
+        + f" | {km}"
+    )
+    L.append(
+        f"Declarations: {subject.get('declarations')} | Auctioneer notes: {subject.get('condition_notes')!r}"
+    )
 
     L.append("\n## COMPARABLE LISTINGS (scrutinized — reason from these individually)")
-    L.append(f"comp confidence: {comp_confidence}; engine's reasoned anchor: "
-             f"${comp_anchor_cents/100:,.0f}" if comp_anchor_cents else "no retail comps")
-    for line in (comp_narrative or []):
+    L.append(
+        f"comp confidence: {comp_confidence}; engine's reasoned anchor: "
+        f"${comp_anchor_cents/100:,.0f}"
+        if comp_anchor_cents
+        else "no retail comps"
+    )
+    for line in comp_narrative or []:
         L.append(f"  - {line}")
 
     L.append("\n## DECLARATIONS / REMARKS DECODED")
-    L.append(f"codes: {[c['code'] + '=' + c['label'] for c in declarations.get('codes', [])]}")
-    L.append(f"route_salvage={declarations.get('route_salvage')} rebuilt={declarations.get('rebuilt')} "
-             f"out_of_province={declarations.get('out_of_province')} mechanical_risk={declarations.get('mechanical_risk')} "
-             f"claims_total_low={declarations.get('claims_total_low')}")
+    L.append(
+        f"codes: {[c['code'] + '=' + c['label'] for c in declarations.get('codes', [])]}"
+    )
+    L.append(
+        f"route_salvage={declarations.get('route_salvage')} rebuilt={declarations.get('rebuilt')} "
+        f"out_of_province={declarations.get('out_of_province')} mechanical_risk={declarations.get('mechanical_risk')} "
+        f"claims_total_low={declarations.get('claims_total_low')}"
+    )
     L.append(f"remark signals: {declarations.get('remark_signals')}")
 
     L.append("\n## VISION ASSESSMENT (from listing photos)")
     if vision:
-        L.append(f"exterior_grade={vision.get('exterior_grade')}/5 interior_grade={vision.get('interior_grade')}/5 "
-                 f"rust={vision.get('rust_severity')} flood_or_frame={vision.get('flood_or_frame_concern')}")
+        L.append(
+            f"exterior_grade={vision.get('exterior_grade')}/5 interior_grade={vision.get('interior_grade')}/5 "
+            f"rust={vision.get('rust_severity')} flood_or_frame={vision.get('flood_or_frame_concern')}"
+        )
         if vision.get("damage_details"):
             L.append(f"damage: {vision['damage_details']}")
         if vision.get("aftermarket_mods"):
             L.append(f"mods: {[m.get('type') for m in vision['aftermarket_mods']]}")
         if vision.get("repair_components"):
-            L.append(f"components needing repair: {[c.get('component') for c in vision['repair_components']]}")
+            L.append(
+                f"components needing repair: {[c.get('component') for c in vision['repair_components']]}"
+            )
     else:
         L.append("(no vision assessment available)")
 
     if repair_est and repair_est.get("line_items"):
         L.append("\n## REPAIR ESTIMATE (profile-aware sourcing, +buffer)")
-        L.append(f"total ${repair_est['total_low']:,}–${repair_est['total_high']:,} (mid ${repair_est['total_mid']:,}); "
-                 f"confirmed ${repair_est.get('confirmed_low',0):,}–${repair_est.get('confirmed_high',0):,}, "
-                 f"contingent ${repair_est.get('contingent_low',0):,}–${repair_est.get('contingent_high',0):,}")
+        L.append(
+            f"total ${repair_est['total_low']:,}–${repair_est['total_high']:,} (mid ${repair_est['total_mid']:,}); "
+            f"confirmed ${repair_est.get('confirmed_low',0):,}–${repair_est.get('confirmed_high',0):,}, "
+            f"contingent ${repair_est.get('contingent_low',0):,}–${repair_est.get('contingent_high',0):,}"
+        )
 
     if repair_alternatives:
-        L.append("## REPAIR COST BY SOURCING (pre-computed — no need to call refine_repair_quote)")
+        L.append(
+            "## REPAIR COST BY SOURCING (pre-computed — no need to call refine_repair_quote)"
+        )
         for k, e in repair_alternatives.items():
-            L.append(f"  {k}: ${e['total_low']:,}–${e['total_high']:,} (mid ${e['total_mid']:,})")
+            L.append(
+                f"  {k}: ${e['total_low']:,}–${e['total_high']:,} (mid ${e['total_mid']:,})"
+            )
 
     if carfax:
         L.append("\n## CARFAX REPORT (pre-fetched — no need to call get_carfax_report)")
         L.append(json.dumps(carfax)[:600])
     elif declarations.get("claims_total_low"):
-        L.append("\n## CARFAX: none on file — use the claims-total band; "
-                 "do NOT call get_carfax_report, it will return nothing.")
+        L.append(
+            "\n## CARFAX: none on file — use the claims-total band; "
+            "do NOT call get_carfax_report, it will return nothing."
+        )
 
     if vmr:
-        L.append("\n## VMR CANADA BOOK VALUE (published guide — CROSS-CHECK only; comps stay primary)")
-        L.append(f"{vmr.get('trim')}: wholesale ${vmr.get('ws',0):,} / retail ${vmr.get('retail',0):,} "
-                 f"(km-adjusted for {vmr.get('km')} km). If your retail is FAR from this (>~20%), re-check "
-                 f"your comp selection — wrong trim, wrong cab, or a thin pool — and explain the gap. Use it to "
-                 f"catch gross errors, not to anchor.")
+        L.append(
+            "\n## VMR CANADA BOOK VALUE (published guide — CROSS-CHECK only; comps stay primary)"
+        )
+        L.append(
+            f"{vmr.get('trim')}: wholesale ${vmr.get('ws',0):,} / retail ${vmr.get('retail',0):,} "
+            f"(km-adjusted for {vmr.get('km')} km). If your retail is FAR from this (>~20%), re-check "
+            f"your comp selection — wrong trim, wrong cab, or a thin pool — and explain the gap. Use it to "
+            f"catch gross errors, not to anchor."
+        )
 
-    L.append("\n## DETERMINISTIC RULES ENGINE — SANITY BAND (a second opinion, not the truth)")
-    L.append(f"mode={deterministic.get('mode')} verdict={deterministic.get('verdict')} "
-             f"expected_sale=${deterministic.get('expected_sale_cents',0)/100:,.0f} "
-             f"max_bid=${deterministic.get('max_bid_cents',0)/100:,.0f}")
+    L.append(
+        "\n## DETERMINISTIC RULES ENGINE — SANITY BAND (a second opinion, not the truth)"
+    )
+    L.append(
+        f"mode={deterministic.get('mode')} verdict={deterministic.get('verdict')} "
+        f"expected_sale=${deterministic.get('expected_sale_cents',0)/100:,.0f} "
+        f"max_bid=${deterministic.get('max_bid_cents',0)/100:,.0f}"
+    )
 
     L.append("\n## USER PROFILE")
-    L.append(f"{profile.get('label')}: margin_floor ${profile.get('margin_floor')}, "
-             f"hold_time={profile.get('hold_time')}, repair_ability={profile.get('diy')}")
+    L.append(
+        f"{profile.get('label')}: margin_floor ${profile.get('margin_floor')}, "
+        f"hold_time={profile.get('hold_time')}, repair_ability={profile.get('diy')}"
+    )
 
     if calibration:
-        L.append("\n## OPERATOR CORRECTIONS ON PAST CALLS (learn from these — do NOT repeat the mistake)")
-        L.append("The operator reviewed earlier appraisals of similar vehicles and corrected them. "
-                 "Weight these heavily; they encode real outcomes and condition reads the comps missed.")
+        L.append(
+            "\n## OPERATOR CORRECTIONS ON PAST CALLS (learn from these — do NOT repeat the mistake)"
+        )
+        L.append(
+            "The operator reviewed earlier appraisals of similar vehicles and corrected them. "
+            "Weight these heavily; they encode real outcomes and condition reads the comps missed."
+        )
         for line in calibration:
             L.append(line)
 
@@ -313,31 +442,88 @@ def _fmt_evidence(subject, comp_narrative, comp_anchor_cents, comp_confidence,
     # over any numbers stated in the playbook, so the AI's math matches the rules engine.
     try:
         from engine import max_bid as _mb
+
         def _band(lo, hi):
             if hi == float("inf"):
                 return f"${int(lo/1000)}k+"
             if lo == 0:
                 return f"<${int(hi/1000)}k"
             return f"${int(lo/1000)}–{int(hi/1000)}k"
-        tiers = " · ".join(f"{_band(lo, hi)}=${m:,}" for lo, hi, m, _lbl in _mb.MARGIN_TIERS)
-        fees = " · ".join(
-            (f"<${int(hi/1000)}k" if lo == 0 else (f"${int(lo/1000)}k+" if hi == float('inf') else f"${int(lo/1000)}–{int(hi/1000)}k"))
-            + f"=${f}" for lo, hi, f in _mb.REGAL_FEE_SCHEDULE)
-        L.append("\n## CURRENT CONFIG (authoritative — use these, override any numbers in the playbook)")
+
+        tiers = " · ".join(
+            f"{_band(lo, hi)}=${m:,}" for lo, hi, m, _lbl in _mb.MARGIN_TIERS
+        )
+        L.append(
+            "\n## CURRENT CONFIG (authoritative — use these, override any numbers in the playbook)"
+        )
         L.append(f"Margin tiers by sell price: {tiers}")
-        L.append(f"Regal buyer fee by price: {fees}")
-        L.append(f"GST: {_mb.GST_RATE * 100:.0f}%")
+        c = ctx or {
+            "kind": "auction",
+            "apply_auction_fee": True,
+            "tax_rate": _mb.GST_RATE,
+        }
+        if c.get("apply_auction_fee", True):
+            fees = " · ".join(
+                (
+                    f"<${int(hi/1000)}k"
+                    if lo == 0
+                    else (
+                        f"${int(lo/1000)}k+"
+                        if hi == float("inf")
+                        else f"${int(lo/1000)}–{int(hi/1000)}k"
+                    )
+                )
+                + f"=${f}"
+                for lo, hi, f in _mb.REGAL_FEE_SCHEDULE
+            )
+            L.append(f"PURCHASE: auction (Regal). Buyer fee by price: {fees}")
+            L.append(
+                f"Tax (GST on bid + fee): {c.get('tax_rate', _mb.GST_RATE) * 100:.0f}%"
+            )
+            L.append(
+                "Max bid = (sell − recon/repair − margin − buyer_fee) / (1 + tax)."
+            )
+        else:
+            L.append(
+                f"PURCHASE: {c.get('label', 'private/dealer')} — NO auction/buyer fee."
+            )
+            L.append(
+                f"Tax on purchase: {c.get('tax_rate', 0.0) * 100:.0f}% "
+                "(0% means this jurisdiction doesn't tax this sale)."
+            )
+            L.append(
+                "Max buy price = (sell − recon/repair − margin) / (1 + tax). No auction fee."
+            )
     except Exception:  # noqa: BLE001
         pass
 
-    L.append("\nReason to YOUR valuation and recommendation for this user. Cite evidence for every adjustment.")
+    L.append(
+        "\nReason to YOUR valuation and recommendation for this user. Cite evidence for every adjustment."
+    )
     return "\n".join(L)
 
 
-def appraise(subject, *, comp_narrative, comp_anchor_cents, comp_confidence,
-             declarations, vision, repair_est, deterministic, profile,
-             mode="deep", effort=None, tool_ctx=None, carfax=None, repair_alternatives=None,
-             calibration=None, vmr=None, progress=None) -> dict:
+def appraise(
+    subject,
+    *,
+    comp_narrative,
+    comp_anchor_cents,
+    comp_confidence,
+    declarations,
+    vision,
+    repair_est,
+    deterministic,
+    profile,
+    mode="deep",
+    effort=None,
+    tool_ctx=None,
+    carfax=None,
+    repair_alternatives=None,
+    calibration=None,
+    vmr=None,
+    progress=None,
+    ctx=None,
+) -> dict:
     """
     Run the AI appraiser over assembled evidence.
       mode="triage": fast/cheap screen — medium effort, lean output, brief rationale, no tools.
@@ -351,17 +537,31 @@ def appraise(subject, *, comp_narrative, comp_anchor_cents, comp_confidence,
 
     triage = mode == "triage"
     eff = effort or (TRIAGE_EFFORT if triage else EFFORT)
-    evidence = _fmt_evidence(subject, comp_narrative, comp_anchor_cents, comp_confidence,
-                             declarations, vision, repair_est, deterministic, profile,
-                             carfax=carfax, repair_alternatives=repair_alternatives,
-                             calibration=calibration, vmr=vmr)
+    evidence = _fmt_evidence(
+        subject,
+        comp_narrative,
+        comp_anchor_cents,
+        comp_confidence,
+        declarations,
+        vision,
+        repair_est,
+        deterministic,
+        profile,
+        carfax=carfax,
+        repair_alternatives=repair_alternatives,
+        calibration=calibration,
+        vmr=vmr,
+        ctx=ctx,
+    )
     if triage:
         evidence += "\n\n" + TRIAGE_HINT
     else:
         evidence += "\n\n" + DEEP_HINT
 
     # Bump SDK retries for unattended batch runs (429/5xx backoff); env-overridable.
-    client = anthropic.Anthropic(max_retries=int(os.getenv("APPRAISER_MAX_RETRIES", "5")))
+    client = anthropic.Anthropic(
+        max_retries=int(os.getenv("APPRAISER_MAX_RETRIES", "5"))
+    )
     if not triage and tool_ctx:
         result = _appraise_agentic(client, evidence, tool_ctx, eff, progress=progress)
     else:
@@ -369,16 +569,29 @@ def appraise(subject, *, comp_narrative, comp_anchor_cents, comp_confidence,
             model=REASONING_MODEL,
             max_tokens=4000 if triage else 16000,
             thinking={"type": "adaptive"},
-            system=[{"type": "text", "text": PLAYBOOK, "cache_control": {"type": "ephemeral"}}],
-            output_config={"effort": eff,
-                           "format": {"type": "json_schema", "schema": TRIAGE_SCHEMA if triage else OUTPUT_SCHEMA}},
+            system=[
+                {
+                    "type": "text",
+                    "text": PLAYBOOK,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            output_config={
+                "effort": eff,
+                "format": {
+                    "type": "json_schema",
+                    "schema": TRIAGE_SCHEMA if triage else OUTPUT_SCHEMA,
+                },
+            },
             messages=[{"role": "user", "content": evidence}],
         )
         text = next(b.text for b in resp.content if b.type == "text")
         result = json.loads(text)
-        result["_usage"] = {"input": resp.usage.input_tokens,
-                            "cache_read": getattr(resp.usage, "cache_read_input_tokens", 0),
-                            "output": resp.usage.output_tokens}
+        result["_usage"] = {
+            "input": resp.usage.input_tokens,
+            "cache_read": getattr(resp.usage, "cache_read_input_tokens", 0),
+            "output": resp.usage.output_tokens,
+        }
     result["_mode"] = mode
     result["_model"] = REASONING_MODEL
     return result
@@ -386,26 +599,32 @@ def appraise(subject, *, comp_narrative, comp_anchor_cents, comp_confidence,
 
 # ── Escalation tools (hybrid agent) — the deep pass calls these only when it needs more ──
 
+
 def _build_tools(ctx: dict):
     """Return (tool_schemas, execute_fn). ctx carries conn, subject, vision, profile."""
     tools = [
         {
             "name": "refine_repair_quote",
             "description": "Re-cost the vehicle's repairs under a different parts/labour sourcing. "
-                           "Use on damaged/salvage units to test whether a cheaper sourcing flips the deal. "
-                           "sourcing: 'oem_shop' (OEM parts + shop labour, conservative), "
-                           "'used_diy' (used parts + own labour, cheapest), 'middle' (default).",
+            "Use on damaged/salvage units to test whether a cheaper sourcing flips the deal. "
+            "sourcing: 'oem_shop' (OEM parts + shop labour, conservative), "
+            "'used_diy' (used parts + own labour, cheapest), 'middle' (default).",
             "input_schema": {
                 "type": "object",
-                "properties": {"sourcing": {"type": "string", "enum": ["oem_shop", "used_diy", "middle"]}},
+                "properties": {
+                    "sourcing": {
+                        "type": "string",
+                        "enum": ["oem_shop", "used_diy", "middle"],
+                    }
+                },
                 "required": ["sourcing"],
             },
         },
         {
             "name": "get_carfax_report",
             "description": "Fetch the stored Carfax report for this vehicle (accidents, service, branding). "
-                           "Use when claims history is ambiguous (e.g. a CH#### claims-total band) and the "
-                           "single-hit-vs-many-small distinction would change the price.",
+            "Use when claims history is ambiguous (e.g. a CH#### claims-total band) and the "
+            "single-hit-vs-many-small distinction would change the price.",
             "input_schema": {"type": "object", "properties": {}},
         },
         # NOTE: the live-comp-scrape tool was intentionally removed. Comps are collected
@@ -418,24 +637,42 @@ def _build_tools(ctx: dict):
         try:
             if name == "refine_repair_quote":
                 from engine.repair_estimate import estimate_repair
+
                 comps = (ctx.get("vision") or {}).get("repair_components") or []
-                factors = {"oem_shop": (1.0, 1.0), "used_diy": (0.5, 0.55), "middle": (0.65, 1.0)}
+                factors = {
+                    "oem_shop": (1.0, 1.0),
+                    "used_diy": (0.5, 0.55),
+                    "middle": (0.65, 1.0),
+                }
                 sf, lf = factors.get(args.get("sourcing", "middle"), (0.65, 1.0))
                 est = estimate_repair(comps, small_factor=sf, large_factor=lf)
-                return (f"Repair @ {args.get('sourcing')}: ${est['total_low']:,}–${est['total_high']:,} "
-                        f"(mid ${est['total_mid']:,}); confirmed ${est.get('confirmed_low',0):,}–"
-                        f"${est.get('confirmed_high',0):,}, contingent ${est.get('contingent_low',0):,}–"
-                        f"${est.get('contingent_high',0):,}")
+                return (
+                    f"Repair @ {args.get('sourcing')}: ${est['total_low']:,}–${est['total_high']:,} "
+                    f"(mid ${est['total_mid']:,}); confirmed ${est.get('confirmed_low',0):,}–"
+                    f"${est.get('confirmed_high',0):,}, contingent ${est.get('contingent_low',0):,}–"
+                    f"${est.get('contingent_high',0):,}"
+                )
             if name == "get_carfax_report":
                 from db.connection import get_cursor
+
                 cur = get_cursor(ctx["conn"])
-                cur.execute("SELECT carfax_report FROM regal_listings WHERE contract=%s "
-                            "ORDER BY last_updated_at DESC LIMIT 1", (ctx["subject"].get("contract"),))
-                row = cur.fetchone(); cur.close()
-                rpt = (row.get("carfax_report") if row else None)
-                return json.dumps(rpt) if rpt else ("No stored Carfax report. Run the local Carfax agent "
-                                                    "(collector.carfax_agent) to populate it; proceed with the "
-                                                    "claims-total band for now.")
+                cur.execute(
+                    "SELECT carfax_report FROM regal_listings WHERE contract=%s "
+                    "ORDER BY last_updated_at DESC LIMIT 1",
+                    (ctx["subject"].get("contract"),),
+                )
+                row = cur.fetchone()
+                cur.close()
+                rpt = row.get("carfax_report") if row else None
+                return (
+                    json.dumps(rpt)
+                    if rpt
+                    else (
+                        "No stored Carfax report. Run the local Carfax agent "
+                        "(collector.carfax_agent) to populate it; proceed with the "
+                        "claims-total band for now."
+                    )
+                )
         except Exception as e:
             return f"tool error: {e}"
         return f"unknown tool: {name}"
@@ -443,11 +680,15 @@ def _build_tools(ctx: dict):
     return tools, execute
 
 
-_TOOL_LABELS = {"get_carfax_report": "AI: checking Carfax",
-                "refine_repair_quote": "AI: re-quoting repairs"}
+_TOOL_LABELS = {
+    "get_carfax_report": "AI: checking Carfax",
+    "refine_repair_quote": "AI: re-quoting repairs",
+}
 
 
-def _appraise_agentic(client, evidence: str, tool_ctx: dict, effort: str, progress=None) -> dict:
+def _appraise_agentic(
+    client, evidence: str, tool_ctx: dict, effort: str, progress=None
+) -> dict:
     """Deep pass with on-demand escalation tools (manual loop for cost-controlled tool execution)."""
     _p = progress or (lambda *a, **k: None)
     tools, execute = _build_tools(tool_ctx)
@@ -455,10 +696,21 @@ def _appraise_agentic(client, evidence: str, tool_ctx: dict, effort: str, progre
     tools_used = []
     for round_i in range(6):  # cap tool rounds
         resp = client.messages.create(
-            model=REASONING_MODEL, max_tokens=16000, thinking={"type": "adaptive"},
-            system=[{"type": "text", "text": PLAYBOOK, "cache_control": {"type": "ephemeral"}}],
+            model=REASONING_MODEL,
+            max_tokens=16000,
+            thinking={"type": "adaptive"},
+            system=[
+                {
+                    "type": "text",
+                    "text": PLAYBOOK,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             tools=tools,
-            output_config={"effort": effort, "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
+            output_config={
+                "effort": effort,
+                "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA},
+            },
             messages=messages,
         )
         if resp.stop_reason == "tool_use":
@@ -468,17 +720,24 @@ def _appraise_agentic(client, evidence: str, tool_ctx: dict, effort: str, progre
                 if b.type == "tool_use":
                     tools_used.append(b.name)
                     _p(_TOOL_LABELS.get(b.name, "AI: " + b.name))
-                    results.append({"type": "tool_result", "tool_use_id": b.id,
-                                    "content": execute(b.name, b.input)})
+                    results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": b.id,
+                            "content": execute(b.name, b.input),
+                        }
+                    )
             messages.append({"role": "user", "content": results})
             _p("AI appraising (deep)")
             continue
         text = next(b.text for b in resp.content if b.type == "text")
         result = json.loads(text)
         result["_tools_used"] = tools_used
-        result["_usage"] = {"input": resp.usage.input_tokens,
-                            "cache_read": getattr(resp.usage, "cache_read_input_tokens", 0),
-                            "output": resp.usage.output_tokens}
+        result["_usage"] = {
+            "input": resp.usage.input_tokens,
+            "cache_read": getattr(resp.usage, "cache_read_input_tokens", 0),
+            "output": resp.usage.output_tokens,
+        }
         return result
     raise RuntimeError("appraiser exceeded tool-round limit")
 
@@ -486,22 +745,30 @@ def _appraise_agentic(client, evidence: str, tool_ctx: dict, effort: str, progre
 def render(a: dict) -> str:
     u = a.get("_usage") or {}
     if a.get("_mode") == "triage":
-        L = [f"VERDICT:   {a['verdict']}  |  MAX BID: ${a['max_bid']:,}  |  value ${a['value']:,}  "
-             f"[AI triage: {a.get('_model')}, {a['mode']}, confidence {a['confidence']}]",
-             f"SUMMARY:   {a['summary']}"]
+        L = [
+            f"VERDICT:   {a['verdict']}  |  MAX BID: ${a['max_bid']:,}  |  value ${a['value']:,}  "
+            f"[AI triage: {a.get('_model')}, {a['mode']}, confidence {a['confidence']}]",
+            f"SUMMARY:   {a['summary']}",
+        ]
         if a.get("top_flags"):
             L.append("FLAGS:     " + " · ".join(a["top_flags"]))
         cb = a.get("conditional_bid") or {}
         if cb.get("amount"):
             L.append(f"CONDITIONAL: could bid ${cb['amount']:,} IF {cb['condition']}")
         if a.get("needs_deep_dive"):
-            L.append("→ buy candidate with thin evidence: run --deep for the full appraisal")
-        L.append(f"[tokens: in {u.get('input')}, cache_read {u.get('cache_read')}, out {u.get('output')}]")
+            L.append(
+                "→ buy candidate with thin evidence: run --deep for the full appraisal"
+            )
+        L.append(
+            f"[tokens: in {u.get('input')}, cache_read {u.get('cache_read')}, out {u.get('output')}]"
+        )
         return "\n".join(L)
 
     L = []
-    L.append(f"VERDICT:   {a['verdict']}  |  MAX BID: ${a['max_bid']:,}  |  value ${a['value']:,}  "
-             f"[AI: {a.get('_model')}, mode {a['mode']}, confidence {a['confidence']}]")
+    L.append(
+        f"VERDICT:   {a['verdict']}  |  MAX BID: ${a['max_bid']:,}  |  value ${a['value']:,}  "
+        f"[AI: {a.get('_model')}, mode {a['mode']}, confidence {a['confidence']}]"
+    )
     if a.get("_tools_used"):
         L.append(f"TOOLS USED: {', '.join(a['_tools_used'])}")
     L.append(f"\nREASONING:\n{a['reasoning']}")
@@ -512,10 +779,14 @@ def render(a: dict) -> str:
     if a.get("recon_plan"):
         L.append("\nRECON PLAN:")
         for r in a["recon_plan"]:
-            L.append(f"  [{r['decision']:8}] ${r['cost']:>6,}  {r['action']} — {r['why']}")
+            L.append(
+                f"  [{r['decision']:8}] ${r['cost']:>6,}  {r['action']} — {r['why']}"
+            )
     sp = a.get("sale_plan") or {}
-    L.append(f"\nSALE PLAN: {sp.get('channel')} | list ${sp.get('list_price',0):,} / floor ${sp.get('floor_price',0):,} "
-             f"| est days-to-sell: {sp.get('days_to_sell')}")
+    L.append(
+        f"\nSALE PLAN: {sp.get('channel')} | list ${sp.get('list_price',0):,} / floor ${sp.get('floor_price',0):,} "
+        f"| est days-to-sell: {sp.get('days_to_sell')}"
+    )
     if a.get("verify_before_bid"):
         L.append("\nVERIFY BEFORE BIDDING:")
         for v in a["verify_before_bid"]:
@@ -526,5 +797,7 @@ def render(a: dict) -> str:
     if a.get("divergence_from_rules"):
         L.append(f"\nVS RULES ENGINE: {a['divergence_from_rules']}")
     u = a.get("_usage") or {}
-    L.append(f"\n[tokens: in {u.get('input')}, cache_read {u.get('cache_read')}, out {u.get('output')}]")
+    L.append(
+        f"\n[tokens: in {u.get('input')}, cache_read {u.get('cache_read')}, out {u.get('output')}]"
+    )
     return "\n".join(L)

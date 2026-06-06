@@ -89,6 +89,17 @@ function SettingsView() {
     mut((c) => { delete c.profiles[key]; c.profile_order = (c.profile_order || []).filter((k) => k !== key); });
   }
 
+  const locations = s.locations || [];
+  function addLocation() {
+    const label = (window.prompt("New location label (e.g. Toronto, ON):") || "").trim();
+    if (!label || locations.some((l) => l.label === label)) return;
+    mut((c) => { c.locations = [...(c.locations || []), { label, city: "", province: "", business_tax: 0.05, private_tax: 0.0 }]; });
+  }
+  function delLocation(i) {
+    if (locations.length <= 1) { setErr("keep at least one location"); return; }
+    mut((c) => { const rm = c.locations[i]; c.locations = c.locations.filter((_, j) => j !== i); if (c.active_location === rm.label) c.active_location = (c.locations[0] || {}).label; });
+  }
+
   const Section = ({ title, children, action }) => (
     <div className="card-2" style={{ padding: "20px 22px" }}>
       <div className="row between" style={{ alignItems: "baseline" }}>
@@ -118,6 +129,37 @@ function SettingsView() {
       </div>
 
       <div className="stack rise">
+        {/* LOCATION — drives off-auction tax + where comps are searched */}
+        <Section title="Location" action={<button className="btn sm" onClick={addLocation}>+ Add location</button>}>
+          <div className="col" style={{ gap: 5, marginBottom: 14, maxWidth: 280 }}>
+            <span className="eyebrow" style={{ fontSize: 9.5 }}>active location</span>
+            <select value={s.active_location || ""} onChange={(e) => mut((c) => { c.active_location = e.target.value; })} style={fieldStyle()}>
+              {locations.map((l) => <option key={l.label} value={l.label}>{l.label}</option>)}
+            </select>
+            <span className="faint" style={{ fontSize: 11, marginTop: 2 }}>
+              Sets where FB/Kijiji comps are searched and the off-auction purchase tax. Tax rates are fractions (0.05 = 5%); private = 0 where private sales aren't taxed (e.g. Alberta).
+            </span>
+          </div>
+          <div className="stack">
+            {locations.map((l, i) => (
+              <div key={i} className="inset" style={{ padding: "14px 16px" }}>
+                <div className="row between wrap" style={{ alignItems: "center", marginBottom: 10, gap: 10 }}>
+                  <input value={l.label ?? ""} placeholder="label (e.g. Toronto, ON)" onChange={(e) => mut((c) => { c.locations[i].label = e.target.value; })} style={{ ...fieldStyle(), width: 240 }} />
+                  <button className="btn ghost sm" onClick={() => delLocation(i)} style={{ color: "var(--pass)" }}>Delete</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
+                  {[["city", "city (for comps)", "text"], ["province", "province", "text"], ["business_tax", "business/dealer tax", "float"], ["private_tax", "private tax", "float"]].map(([f, label, kind]) => (
+                    <div key={f} className="col" style={{ gap: 4 }}>
+                      <span className="eyebrow" style={{ fontSize: 9.5 }}>{label}</span>
+                      <input value={l[f] ?? ""} onChange={(e) => mut((c) => { c.locations[i][f] = kind === "float" ? e.target.value : e.target.value; })} style={fieldStyle()} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+
         {/* PROFILES */}
         <Section title="Buyer profiles" action={<button className="btn sm" onClick={addProfile}>+ Add profile</button>}>
           <div className="stack">

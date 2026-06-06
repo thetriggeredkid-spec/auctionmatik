@@ -114,6 +114,25 @@ when building the Chrome extension or needing off-Mac / multi-user access.
 4. Optional: collector to store trim/body columns on scrape; per-vehicle "Load photos" enrichment;
    concurrency-safe lane screening; Settings/profile editor.
 
+### In progress — Appraise ANY vehicle (off-auction) epic
+Plan: `~/.claude/plans/calm-purring-cake.md`. Goal: deep-appraise any vehicle (not just Regal lots) via
+(1) a VMR-style year/make/model/trim selector + VIN shortcut, (2) a pasted ad URL (FB/Kijiji/AutoTrader/
+dealer). Off-auction = **no auction fee**; **tax only where it applies, by seller type** (AB = 5% from a
+business, 0% private). A **location setting** drives both the tax and where comps are searched. 4 phases.
+- **Phase A — location setting + purchase-context refactor ✅**
+  - **Purchase context** (`engine/advisor.purchase_context` + `AUCTION_CTX`): `advise(..., ctx=)` and
+    `_max_bid_cents(..., ctx)` now take a context `{kind, apply_auction_fee, tax_rate, label}`.
+    Auction (default) = Regal buyer fee + GST (unchanged); private/dealer = **no fee**, tax = jurisdiction
+    rate. Off-auction the thesis says "max buy" not "bid". The AI playbook injection (`appraiser._fmt_evidence`,
+    `appraise(ctx=)`) is context-aware so the model's math matches.
+  - **Location setting** (`engine/settings.py`): `locations` list `[{label,city,province,business_tax,
+    private_tax}]` + `active_location`, stored in `app_settings` (no migration; full-replace key like
+    profiles). Helpers `active_location()` / `location_tax(seller_type)`. Editable **Location** section in
+    `settings.jsx` (active dropdown + per-location rate pairs). AB pre-seeded {5%, 0%}.
+  - **Regression guarded:** auction path byte-identical — Jeep 37316 still BID, max bid $11,260, thesis
+    unchanged. 87 tests pass (added context + location-tax tests), ruff clean.
+- Phase B (location-aware comps), C (off-contract appraisal + selector/VIN UI), D (ad-URL ingestion) — next.
+
 ### Done (post-QA, June)
 - **Deep-run streaming** — SSE `/api/evaluate_stream`; live stage checklist + elapsed timer on the
   card (comp screening → Carfax → photos → VMR → AI appraising + its tool calls).

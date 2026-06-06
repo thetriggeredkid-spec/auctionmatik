@@ -12,7 +12,11 @@ after-fix value (Mode B). Reuses engine.max_bid for fee/GST/margin.
 """
 
 from engine.max_bid import get_buyer_fee, get_margin, GST_RATE
-from engine.valuation_modes import route_mode, TITLE_FACTOR_REBUILT, MECHANICAL_RESERVE_UNKNOWN
+from engine.valuation_modes import (
+    route_mode,
+    TITLE_FACTOR_REBUILT,
+    MECHANICAL_RESERVE_UNKNOWN,
+)
 from engine.repair_estimate import estimate_repair
 
 # Buyer profiles. margin = max(floor, tier_margin × scale).
@@ -20,16 +24,63 @@ from engine.repair_estimate import estimate_repair
 #   repair {small_factor, large_factor}: sourcing/labour cost multipliers passed to estimate_repair
 #     (small bolt-on jobs vs big/structural; used-parts/DIY profiles drop large_factor below 1.0).
 PROFILES = {
-    "charles":  {"label": "Charles (flipper)", "margin_floor": 1500, "margin_scale": 1.0,
-                 "repair_buffer": 0.20, "hold_time": "low", "diy": "some",
-                 "mech_reserve_factor": 1.0, "repair": {"small_factor": 0.65, "large_factor": 1.0}},
-    "mechanic": {"label": "DIY mechanic",      "margin_floor": 800,  "margin_scale": 0.5,
-                 "repair_buffer": 0.15, "hold_time": "high", "diy": "full",
-                 "mech_reserve_factor": 0.2, "repair": {"small_factor": 0.50, "large_factor": 0.55}},
+    "charles": {
+        "label": "Charles (flipper)",
+        "margin_floor": 1500,
+        "margin_scale": 1.0,
+        "repair_buffer": 0.20,
+        "hold_time": "low",
+        "diy": "some",
+        "mech_reserve_factor": 1.0,
+        "repair": {"small_factor": 0.65, "large_factor": 1.0},
+    },
+    "mechanic": {
+        "label": "DIY mechanic",
+        "margin_floor": 800,
+        "margin_scale": 0.5,
+        "repair_buffer": 0.15,
+        "hold_time": "high",
+        "diy": "full",
+        "mech_reserve_factor": 0.2,
+        "repair": {"small_factor": 0.50, "large_factor": 0.55},
+    },
 }
 
-LOW_VALUE_THRESHOLD = 4000   # below this (as-is $), sell as-is — don't chase cosmetic recon
-MIN_VIABLE_BID      = 300    # max bid under this ⇒ "not worth the effort"
+LOW_VALUE_THRESHOLD = (
+    4000  # below this (as-is $), sell as-is — don't chase cosmetic recon
+)
+MIN_VIABLE_BID = 300  # max bid under this ⇒ "not worth the effort"
+
+
+# ── Purchase context — where/how the vehicle is bought, which sets fees + tax ──
+# Auction (Regal): a per-price buyer fee + GST on (bid + fee) — the original behavior.
+# Private/dealer (off-auction): NO auction fee; tax depends on the jurisdiction and the
+# seller type (e.g. Alberta = 5% from a business/dealer, 0% on a private sale). The tax
+# rate is supplied by the active location's rate pair (engine/settings.location_tax).
+def purchase_context(
+    kind: str = "auction", *, tax_rate: float | None = None, label: str | None = None
+) -> dict:
+    """Build a purchase context. kind: 'auction' | 'private' | 'dealer'."""
+    if kind == "auction":
+        return {
+            "kind": "auction",
+            "apply_auction_fee": True,
+            "tax_rate": GST_RATE,
+            "label": label or "Regal auction (buyer fee + GST)",
+        }
+    rate = tax_rate or 0.0
+    default_label = ("Private purchase" if kind == "private" else "Dealer purchase") + (
+        f" ({rate * 100:.0f}% tax)" if rate else " (no tax)"
+    )
+    return {
+        "kind": kind,
+        "apply_auction_fee": False,
+        "tax_rate": rate,
+        "label": label or default_label,
+    }
+
+
+AUCTION_CTX = purchase_context("auction")
 
 
 def _margin(profile: dict, sale_dollars: float) -> int:
@@ -37,20 +88,32 @@ def _margin(profile: dict, sale_dollars: float) -> int:
     return int(max(profile["margin_floor"], tier_margin * profile["margin_scale"]))
 
 
-def _max_bid_cents(expected_sale_cents: int, deductions_cents: int, profile: dict) -> dict:
-    """max_bid = (sale − recon/repair − margin − buyer_fee) / 1.05 ; floored at 0."""
+def _max_bid_cents(
+    expected_sale_cents: int,
+    deductions_cents: int,
+    profile: dict,
+    ctx: dict = AUCTION_CTX,
+) -> dict:
+    """Max buy price = (sale − recon/repair − margin − auction_fee) / (1 + tax_rate); floored at 0.
+    Auction applies the per-price Regal buyer fee + GST; private/dealer apply no fee and the
+    jurisdiction's tax rate (0 where private sales aren't taxed)."""
     sale = expected_sale_cents / 100
     deductions = deductions_cents / 100
     margin = _margin(profile, sale)
-    net = sale - deductions - margin  # proceeds before buyer fee + GST
+    net = sale - deductions - margin  # proceeds before buyer fee + tax
+    tax_rate = ctx.get("tax_rate", GST_RATE)
 
-    # Buyer fee depends on the bid price, so iterate like max_bid.calculate_single:
+    if not ctx.get("apply_auction_fee", True):
+        bid = max(net / (1 + tax_rate), 0)
+        return {"max_bid_cents": int(bid * 100), "margin": margin, "buyer_fee": 0}
+
+    # Auction: the buyer fee depends on the bid price, so iterate like max_bid.calculate_single —
     # seed the fee from a rough bid, then recompute once it converges.
     seed_bid = max(net - 700, 0)
     fee = get_buyer_fee(seed_bid)
-    bid = max((net - fee) / (1 + GST_RATE), 0)
+    bid = max((net - fee) / (1 + tax_rate), 0)
     fee = get_buyer_fee(bid)
-    bid = max((net - fee) / (1 + GST_RATE), 0)
+    bid = max((net - fee) / (1 + tax_rate), 0)
     return {"max_bid_cents": int(bid * 100), "margin": margin, "buyer_fee": fee}
 
 
@@ -65,29 +128,62 @@ def _recon_plan(anchor_cents: int, decl: dict, vision: dict, profile: dict) -> d
     # Profile-aware: a DIY mechanic fixes it cheap, so holds back far less than a flipper.
     mech_reserve = 0
     if decl.get("mechanical_risk"):
-        mech_reserve = int(MECHANICAL_RESERVE_UNKNOWN * profile.get("mech_reserve_factor", 1.0))
-        items.append({"work": "Mechanical reserve (unknown/declared issue)", "cost": mech_reserve,
-                      "decision": "RESERVE", "why": "Unspecified mechanical risk — hold this back from your bid."})
+        mech_reserve = int(
+            MECHANICAL_RESERVE_UNKNOWN * profile.get("mech_reserve_factor", 1.0)
+        )
+        items.append(
+            {
+                "work": "Mechanical reserve (unknown/declared issue)",
+                "cost": mech_reserve,
+                "decision": "RESERVE",
+                "why": "Unspecified mechanical risk — hold this back from your bid.",
+            }
+        )
         cost_cents += mech_reserve * 100
 
     # Cosmetic recon from vision damage — only do it if the value tier justifies the ROI.
     damage = (vision or {}).get("damage_details") or []
     if damage:
         cosmetic = estimate_repair(
-            [{"component": d.get("panel", ""), "action": "repair", "severity": d.get("severity")} for d in damage],
+            [
+                {
+                    "component": d.get("panel", ""),
+                    "action": "repair",
+                    "severity": d.get("severity"),
+                }
+                for d in damage
+            ],
             buffer=profile["repair_buffer"],
-            small_factor=repair_cfg["small_factor"], large_factor=repair_cfg["large_factor"])
+            small_factor=repair_cfg["small_factor"],
+            large_factor=repair_cfg["large_factor"],
+        )
         cosmetic_mid = (cosmetic["total_low"] + cosmetic["total_high"]) // 2
         work_label = f"Cosmetic repairs ({len(damage)} item/s)"
         if anchor < LOW_VALUE_THRESHOLD:
-            items.append({"work": work_label, "cost": cosmetic_mid,
-                          "decision": "SKIP", "why": "Low-value unit — sell as-is; repairs won't return their cost."})
+            items.append(
+                {
+                    "work": work_label,
+                    "cost": cosmetic_mid,
+                    "decision": "SKIP",
+                    "why": "Low-value unit — sell as-is; repairs won't return their cost.",
+                }
+            )
         else:
-            items.append({"work": work_label, "cost": cosmetic_mid,
-                          "decision": "DO", "why": "Worth it on this value tier for saleability/curb appeal."})
+            items.append(
+                {
+                    "work": work_label,
+                    "cost": cosmetic_mid,
+                    "decision": "DO",
+                    "why": "Worth it on this value tier for saleability/curb appeal.",
+                }
+            )
             cost_cents += cosmetic_mid * 100
 
-    return {"items": items, "cost_cents": cost_cents, "mechanical_reserve": mech_reserve}
+    return {
+        "items": items,
+        "cost_cents": cost_cents,
+        "mechanical_reserve": mech_reserve,
+    }
 
 
 # Claims deduction (Charles's rule): the deduction is a FRACTION of the claim amount,
@@ -105,12 +201,15 @@ def _claim_fraction(value_dollars: float) -> float:
 
 
 def _value_cap(value_dollars: float) -> float:
-    return 0.03 if value_dollars < 8000 else 0.12   # max deduction as % of value
+    return 0.03 if value_dollars < 8000 else 0.12  # max deduction as % of value
 
 
-def _history_deduction(decl: dict, carfax: dict | None, value_cents: int) -> tuple[int, str]:
+def _history_deduction(
+    decl: dict, carfax: dict | None, value_cents: int
+) -> tuple[int, str]:
     """Dollar deduction (cents) for accident/claims history. Carfax (precise) overrides the
-    CH claims-total band. Applied to the CLEAN value so we don't double-count the comp anchor."""
+    CH claims-total band. Applied to the CLEAN value so we don't double-count the comp anchor.
+    """
     value = max(value_cents / 100, 1)
 
     # Prefer a precise Carfax claim total; otherwise fall back to the CH declaration band.
@@ -118,7 +217,9 @@ def _history_deduction(decl: dict, carfax: dict | None, value_cents: int) -> tup
     if carfax and carfax.get("total_claims_cad"):
         claim = carfax["total_claims_cad"]
     elif decl.get("claims_total_low"):
-        claim = decl["claims_total_low"] + 2500   # CH band midpoint (e.g. CH15000 → ~$17.5k)
+        claim = (
+            decl["claims_total_low"] + 2500
+        )  # CH band midpoint (e.g. CH15000 → ~$17.5k)
 
     # No dollar claim figure: deduct per Carfax accident count if we have one.
     if claim is None:
@@ -139,16 +240,39 @@ def _history_deduction(decl: dict, carfax: dict | None, value_cents: int) -> tup
     return int(deduction * 100), reason
 
 
-def advise(subject: dict, *, anchor_cents: int, clean_value_cents: int | None,
-           decl: dict, vision: dict, carfax: dict | None = None,
-           profile_key: str = "charles") -> dict:
+def _cost_fragment(ctx: dict, fee: int) -> str:
+    """The fee/tax clause for the thesis line, per purchase context."""
+    rate = ctx.get("tax_rate", GST_RATE)
+    if ctx.get("apply_auction_fee", True):
+        return f"Regal fee ${fee:,} & {rate * 100:.0f}% GST"
+    return f"{rate * 100:.0f}% tax" if rate else "no purchase tax"
+
+
+def _bid_word(ctx: dict) -> str:
+    """'bid' at auction, 'max buy' for a private/dealer purchase."""
+    return "bid" if ctx.get("kind", "auction") == "auction" else "max buy"
+
+
+def advise(
+    subject: dict,
+    *,
+    anchor_cents: int,
+    clean_value_cents: int | None,
+    decl: dict,
+    vision: dict,
+    carfax: dict | None = None,
+    profile_key: str = "charles",
+    ctx: dict = AUCTION_CTX,
+) -> dict:
     profile = PROFILES[profile_key]
     repair_cfg = profile["repair"]
     # Repair quote is profile-aware: used-parts/DIY profiles price the big jobs cheaper.
-    repair_est = estimate_repair((vision or {}).get("repair_components") or [],
-                                 buffer=profile["repair_buffer"],
-                                 small_factor=repair_cfg["small_factor"],
-                                 large_factor=repair_cfg["large_factor"])
+    repair_est = estimate_repair(
+        (vision or {}).get("repair_components") or [],
+        buffer=profile["repair_buffer"],
+        small_factor=repair_cfg["small_factor"],
+        large_factor=repair_cfg["large_factor"],
+    )
     clean_value_cents = clean_value_cents or anchor_cents
     mode = route_mode(decl, vision, repair_est, clean_value_cents)
     verify = list(decl.get("verify_before_bid") or [])
@@ -162,37 +286,60 @@ def advise(subject: dict, *, anchor_cents: int, clean_value_cents: int | None,
         repair_cents = (repair_est.get("total_mid", 0) if repair_est else 0) * 100
         if repair_cents >= after_fix:
             verdict, max_bid = "PARTS_ONLY / PASS", 0
-            thesis = (f"Repair ~${repair_cents/100:,.0f} exceeds after-fix value ~${after_fix/100:,.0f}"
-                      f"{' (rebuilt title)' if rebuilt else ''} — write-off; parts/scrap only.")
+            thesis = (
+                f"Repair ~${repair_cents/100:,.0f} exceeds after-fix value ~${after_fix/100:,.0f}"
+                f"{' (rebuilt title)' if rebuilt else ''} — write-off; parts/scrap only."
+            )
         else:
-            mb = _max_bid_cents(after_fix, repair_cents, profile)
+            mb = _max_bid_cents(after_fix, repair_cents, profile, ctx)
             max_bid = mb["max_bid_cents"]
-            verdict = "BID-TO-FIX" if max_bid >= MIN_VIABLE_BID * 100 else "PASS (thin margin)"
-            thesis = (f"Buy-to-fix: after-fix ~${after_fix/100:,.0f}"
-                      f"{' (rebuilt ×0.78)' if rebuilt else ''} − repair ~${repair_cents/100:,.0f} "
-                      f"− margin ${mb['margin']:,} − Regal fee ${mb['buyer_fee']:,} & 5% GST "
-                      f"⇒ bid ≤ ${max_bid/100:,.0f}.")
-        recon = {"items": [{"work": "Full repair (see component quote)",
-                            "cost": repair_cents // 100, "decision": "REQUIRED", "why": "Salvage project."}],
-                 "cost_cents": repair_cents, "mechanical_reserve": 0}
+            verdict = (
+                "BID-TO-FIX"
+                if max_bid >= MIN_VIABLE_BID * 100
+                else "PASS (thin margin)"
+            )
+            thesis = (
+                f"Buy-to-fix: after-fix ~${after_fix/100:,.0f}"
+                f"{' (rebuilt ×0.78)' if rebuilt else ''} − repair ~${repair_cents/100:,.0f} "
+                f"− margin ${mb['margin']:,} − {_cost_fragment(ctx, mb['buyer_fee'])} "
+                f"⇒ {_bid_word(ctx)} ≤ ${max_bid/100:,.0f}."
+            )
+        recon = {
+            "items": [
+                {
+                    "work": "Full repair (see component quote)",
+                    "cost": repair_cents // 100,
+                    "decision": "REQUIRED",
+                    "why": "Salvage project.",
+                }
+            ],
+            "cost_cents": repair_cents,
+            "mechanical_reserve": 0,
+        }
         expected_sale = after_fix
     else:
         recon = _recon_plan(anchor_cents, decl, vision, profile)
         hist_ded, hist_reason = _history_deduction(decl, carfax, anchor_cents)
         expected_sale = anchor_cents - hist_ded
-        mb = _max_bid_cents(expected_sale, recon["cost_cents"], profile)
+        mb = _max_bid_cents(expected_sale, recon["cost_cents"], profile, ctx)
         max_bid = mb["max_bid_cents"]
-        verdict = "BID" if max_bid >= MIN_VIABLE_BID * 100 else "PASS (not worth the effort)"
-        thesis = (f"As-is flip: sells ~${expected_sale/100:,.0f}, "
-                  f"recon/reserve ${recon['cost_cents']/100:,.0f}, margin ${mb['margin']:,}, "
-                  f"Regal fee ${mb['buyer_fee']:,} & 5% GST "
-                  f"⇒ bid ≤ ${max_bid/100:,.0f}.")
+        verdict = (
+            "BID" if max_bid >= MIN_VIABLE_BID * 100 else "PASS (not worth the effort)"
+        )
+        thesis = (
+            f"As-is flip: sells ~${expected_sale/100:,.0f}, "
+            f"recon/reserve ${recon['cost_cents']/100:,.0f}, margin ${mb['margin']:,}, "
+            f"{_cost_fragment(ctx, mb['buyer_fee'])} "
+            f"⇒ {_bid_word(ctx)} ≤ ${max_bid/100:,.0f}."
+        )
 
-    # Profit projection (rough): sale − bid − buyer fee − GST − recon costs.
+    # Profit projection (rough): sale − bid − fee − tax − recon costs (fee/tax per context).
     bid_dollars = max_bid / 100
-    fee = get_buyer_fee(bid_dollars)
-    gst = (bid_dollars + fee) * GST_RATE
-    projected_net = expected_sale / 100 - bid_dollars - fee - gst - recon["cost_cents"] / 100
+    fee = get_buyer_fee(bid_dollars) if ctx.get("apply_auction_fee", True) else 0
+    tax = (bid_dollars + fee) * ctx.get("tax_rate", GST_RATE)
+    projected_net = (
+        expected_sale / 100 - bid_dollars - fee - tax - recon["cost_cents"] / 100
+    )
 
     # Sale plan: drivable retail-grade units sell retail; everything else wholesales.
     drivable = "not_drivable" not in (decl.get("remark_signals") or [])
@@ -214,11 +361,24 @@ def advise(subject: dict, *, anchor_cents: int, clean_value_cents: int | None,
         "verify_before_bid": verify,
         "recon": recon,
         "history": {"deduction_cents": hist_ded, "reason": hist_reason},
-        "sale_plan": {"channel": channel, "list_price_cents": list_price,
-                      "floor_price_cents": floor_price,
-                      "hold_note": "You prefer fast turns — avoid long-DOM units." if profile["hold_time"] == "low" else ""},
+        "sale_plan": {
+            "channel": channel,
+            "list_price_cents": list_price,
+            "floor_price_cents": floor_price,
+            "hold_note": (
+                "You prefer fast turns — avoid long-DOM units."
+                if profile["hold_time"] == "low"
+                else ""
+            ),
+        },
         "projected_net": int(projected_net),
         "expected_sale_cents": expected_sale,
+        "context": {
+            "kind": ctx.get("kind", "auction"),
+            "label": ctx.get("label", ""),
+            "tax_rate": ctx.get("tax_rate", GST_RATE),
+            "auction_fee": ctx.get("apply_auction_fee", True),
+        },
     }
 
 
@@ -232,7 +392,9 @@ def render(advice: dict) -> str:
 
     history = advice.get("history") or {}
     if history.get("deduction_cents"):
-        lines.append(f"HISTORY:   −${history['deduction_cents'] / 100:,.0f} — {history['reason']}")
+        lines.append(
+            f"HISTORY:   −${history['deduction_cents'] / 100:,.0f} — {history['reason']}"
+        )
 
     if advice["verify_before_bid"]:
         lines.append("\n⚠ VERIFY BEFORE BIDDING")
@@ -241,14 +403,18 @@ def render(advice: dict) -> str:
 
     lines.append("\n🔧 RECON PLAN")
     for item in advice["recon"]["items"]:
-        lines.append(f"   [{item['decision']:8}] ${item['cost']:>6,}  {item['work']} — {item['why']}")
+        lines.append(
+            f"   [{item['decision']:8}] ${item['cost']:>6,}  {item['work']} — {item['why']}"
+        )
 
     sale_plan = advice["sale_plan"]
     lines.append("\n💰 SALE PLAN")
     lines.append(f"   channel: {sale_plan['channel']}")
-    lines.append(f"   list at ${sale_plan['list_price_cents']/100:,.0f}, "
-                 f"floor ${sale_plan['floor_price_cents']/100:,.0f}"
-                 + (f"  ({sale_plan['hold_note']})" if sale_plan['hold_note'] else ""))
+    lines.append(
+        f"   list at ${sale_plan['list_price_cents']/100:,.0f}, "
+        f"floor ${sale_plan['floor_price_cents']/100:,.0f}"
+        + (f"  ({sale_plan['hold_note']})" if sale_plan["hold_note"] else "")
+    )
 
     lines.append(f"\n📈 PROJECTED NET (rough): ${advice['projected_net']:,}")
     return "\n".join(lines)

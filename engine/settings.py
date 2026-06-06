@@ -58,6 +58,26 @@ def _read_engine_defaults() -> dict:
             for lo, hi, f in REGAL_FEE_SCHEDULE
         ],
         "gst_rate": GST_RATE,
+        # Saved locations + the active one. Each carries a tax-rate pair: business/dealer
+        # vs private sale (Alberta = 5% from a business, 0% on a private sale). Drives both
+        # the off-auction purchase tax AND where Marketplace/Kijiji comps are searched.
+        "locations": [
+            {
+                "label": "Edmonton, AB",
+                "city": "edmonton",
+                "province": "AB",
+                "business_tax": 0.05,
+                "private_tax": 0.0,
+            },
+            {
+                "label": "Calgary, AB",
+                "city": "calgary",
+                "province": "AB",
+                "business_tax": 0.05,
+                "private_tax": 0.0,
+            },
+        ],
+        "active_location": "Edmonton, AB",
         "engine": {
             "deep_autopull_carfax": True,
             "deep_autorun_vision": True,
@@ -97,7 +117,13 @@ def load(conn) -> dict:
     merged = _deep_merge(_defaults(), overrides)
     # These keys must fully replace (not deep-merge into) the defaults when the editor
     # sends them, so list deletes/renames/reorders stick instead of being merged back.
-    for key in ("profiles", "profile_order", "margin_tiers", "fee_schedule"):
+    for key in (
+        "profiles",
+        "profile_order",
+        "margin_tiers",
+        "fee_schedule",
+        "locations",
+    ):
         if key in overrides:
             merged[key] = overrides[key]
     return merged
@@ -163,6 +189,36 @@ def apply(merged: dict) -> None:
 
 def engine_flag(name: str, default):
     return (CURRENT.get("engine") or {}).get(name, default)
+
+
+_DEFAULT_LOCATION = {
+    "label": "Edmonton, AB",
+    "city": "edmonton",
+    "province": "AB",
+    "business_tax": 0.05,
+    "private_tax": 0.0,
+}
+
+
+def active_location() -> dict:
+    """The currently-selected location {label, city, province, business_tax, private_tax}.
+    Falls back to the first saved location, then to Edmonton/AB."""
+    locs = CURRENT.get("locations") or []
+    active = CURRENT.get("active_location")
+    for loc in locs:
+        if loc.get("label") == active:
+            return loc
+    return locs[0] if locs else dict(_DEFAULT_LOCATION)
+
+
+def location_tax(seller_type: str) -> float:
+    """Purchase tax rate for the active location by seller type ('private' vs business/dealer)."""
+    loc = active_location()
+    key = "private_tax" if seller_type == "private" else "business_tax"
+    try:
+        return float(loc.get(key, 0.0))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def apply_from_db(conn) -> dict:
