@@ -547,6 +547,16 @@ def _apply_vision_spec(vehicle: dict, va: dict):
 # ── Recommendation Engine integration ─────────────────────────────────────────
 
 
+def _coerce_json(val):
+    """A JSONB column comes back as a dict; a text column as a str — normalize to dict/None."""
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except (ValueError, TypeError):
+            return None
+    return val if isinstance(val, dict) else None
+
+
 def _personal_sale_comps(conn, yr: int, make: str, model: str) -> list:
     """Your own past sales (personal_sales) as realized-price comps for this vehicle.
     Shaped like a retail_listings row so comp_scrutiny consumes them directly; tagged
@@ -601,7 +611,7 @@ def _advisor_anchor(conn, vehicle: dict, valuation: dict):
         cur = get_cursor(conn)
         cur.execute(
             """SELECT external_id, year, make, model, trim, odometer_km, asking_price, posted_at,
-                              title, description, listing_url, source, main_photo_url
+                              title, description, listing_url, source, main_photo_url, vision_assessment
                        FROM retail_listings
                        WHERE UPPER(make) = %s AND UPPER(COALESCE(model, '')) LIKE %s
                          AND year BETWEEN %s AND %s AND asking_price >= 300000 AND is_sold = FALSE
@@ -610,6 +620,8 @@ def _advisor_anchor(conn, vehicle: dict, valuation: dict):
             (make, model.split()[0] + "%", yr - 2, yr + 2),
         )
         comps = [dict(r) for r in cur.fetchall()]
+        for c in comps:  # decode stored vision JSON → comp["vision"]
+            c["vision"] = _coerce_json(c.pop("vision_assessment", None))
         comps += _personal_sale_comps(conn, yr, make, model)
         cur.close()
     if len(comps) >= 3:

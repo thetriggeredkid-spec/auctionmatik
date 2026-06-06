@@ -12,7 +12,7 @@ The CLI (evaluate.py) keeps the hardcoded defaults unless it calls apply_from_db
 import copy
 import json
 
-_INF = 100_000_000   # JSON-friendly stand-in for the top fee/margin band's "infinity"
+_INF = 100_000_000  # JSON-friendly stand-in for the top fee/margin band's "infinity"
 
 # In-memory live snapshot (engine toggles read this at call time).
 CURRENT: dict = {}
@@ -49,13 +49,20 @@ def _read_engine_defaults() -> dict:
     return {
         "profiles": profiles,
         "profile_order": list(PROFILES.keys()),
-        "margin_tiers": [[lo, (_INF if hi == float("inf") else hi), m, lbl] for lo, hi, m, lbl in MARGIN_TIERS],
-        "fee_schedule": [[lo, (_INF if hi == float("inf") else hi), f] for lo, hi, f in REGAL_FEE_SCHEDULE],
+        "margin_tiers": [
+            [lo, (_INF if hi == float("inf") else hi), m, lbl]
+            for lo, hi, m, lbl in MARGIN_TIERS
+        ],
+        "fee_schedule": [
+            [lo, (_INF if hi == float("inf") else hi), f]
+            for lo, hi, f in REGAL_FEE_SCHEDULE
+        ],
         "gst_rate": GST_RATE,
         "engine": {
             "deep_autopull_carfax": True,
             "deep_autorun_vision": True,
             "deep_autocollect_comps": True,
+            "deep_vision_comps": False,  # OFF by default — extra Haiku calls + latency per deep run
             "vision_photo_cap": 30,
             "prep_default_limit": 25,
         },
@@ -75,6 +82,7 @@ def _deep_merge(base: dict, over: dict) -> dict:
 def load(conn) -> dict:
     """Defaults merged with the stored overrides → the full effective settings."""
     from db.connection import get_cursor
+
     cur = get_cursor(conn)
     cur.execute("SELECT settings FROM app_settings WHERE id = 1")
     row = cur.fetchone()
@@ -96,12 +104,17 @@ def load(conn) -> dict:
 
 def _to_profile(p: dict, key: str) -> dict:
     return {
-        "label": p.get("label", key), "margin_floor": int(p.get("margin_floor", 1500)),
-        "margin_scale": float(p.get("margin_scale", 1.0)), "repair_buffer": float(p.get("repair_buffer", 0.20)),
-        "hold_time": p.get("hold_time", "low"), "diy": p.get("diy", "some"),
+        "label": p.get("label", key),
+        "margin_floor": int(p.get("margin_floor", 1500)),
+        "margin_scale": float(p.get("margin_scale", 1.0)),
+        "repair_buffer": float(p.get("repair_buffer", 0.20)),
+        "hold_time": p.get("hold_time", "low"),
+        "diy": p.get("diy", "some"),
         "mech_reserve_factor": float(p.get("mech_reserve_factor", 1.0)),
-        "repair": {"small_factor": float(p.get("repair_small_factor", 0.65)),
-                   "large_factor": float(p.get("repair_large_factor", 1.0))},
+        "repair": {
+            "small_factor": float(p.get("repair_small_factor", 0.65)),
+            "large_factor": float(p.get("repair_large_factor", 1.0)),
+        },
     }
 
 
@@ -112,7 +125,9 @@ def apply(merged: dict) -> None:
     import engine.vision as vis
 
     # Buyer profiles — mutate the dict in place so existing references stay valid.
-    new_profiles = {k: _to_profile(p, k) for k, p in (merged.get("profiles") or {}).items()}
+    new_profiles = {
+        k: _to_profile(p, k) for k, p in (merged.get("profiles") or {}).items()
+    }
     if new_profiles:
         adv.PROFILES.clear()
         adv.PROFILES.update(new_profiles)
@@ -121,10 +136,15 @@ def apply(merged: dict) -> None:
     # Restore the JSON-friendly sentinel back to a real float("inf") top band.
     def _to_inf(hi):
         return float("inf") if hi is None or hi >= _INF else hi
+
     if merged.get("margin_tiers"):
-        mb.MARGIN_TIERS = [(lo, _to_inf(hi), m, lbl) for lo, hi, m, lbl in merged["margin_tiers"]]
+        mb.MARGIN_TIERS = [
+            (lo, _to_inf(hi), m, lbl) for lo, hi, m, lbl in merged["margin_tiers"]
+        ]
     if merged.get("fee_schedule"):
-        mb.REGAL_FEE_SCHEDULE = [(lo, _to_inf(hi), f) for lo, hi, f in merged["fee_schedule"]]
+        mb.REGAL_FEE_SCHEDULE = [
+            (lo, _to_inf(hi), f) for lo, hi, f in merged["fee_schedule"]
+        ]
 
     # GST — patch every module that imported it by value.
     gst = float(merged.get("gst_rate", mb.GST_RATE))
@@ -152,9 +172,12 @@ def apply_from_db(conn) -> dict:
 
 def save(conn, patch: dict) -> dict:
     from db.connection import get_cursor
+
     cur = get_cursor(conn)
-    cur.execute("UPDATE app_settings SET settings = %s::jsonb, updated_at = NOW() WHERE id = 1",
-                (json.dumps(patch or {}),))
+    cur.execute(
+        "UPDATE app_settings SET settings = %s::jsonb, updated_at = NOW() WHERE id = 1",
+        (json.dumps(patch or {}),),
+    )
     conn.commit()
     cur.close()
     return apply_from_db(conn)

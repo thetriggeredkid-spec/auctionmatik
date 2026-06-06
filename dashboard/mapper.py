@@ -525,6 +525,9 @@ def evaluate(
     if ai_mode == "deep":
         _p("Searching live comps")
         _maybe_autocollect_comps(conn, vehicle, ai_mode, collect_comps)
+        n_vis = _maybe_vision_comps(conn, vehicle, ai_mode)
+        if n_vis:
+            _p(f"Reading comp photos ({n_vis})")
 
     _p("Screening comps & history")
     try:
@@ -860,6 +863,51 @@ def _maybe_autocollect_comps(
     ) as e:  # noqa: BLE001 — no token / make unknown / network: continue without comps
         print(f"[deep autocollect comps] {vehicle.get('contract')}: {e}")
         return False
+
+
+def _maybe_vision_comps(
+    conn, vehicle: dict, ai_mode: str | None, limit: int = 6
+) -> int:
+    """Deep only, gated by deep_vision_comps (default OFF): run the cheap Haiku vision pass
+    on this vehicle's matching comps that have photos but no stored assessment yet, so
+    comp_scrutiny can drop the ones that are cheap BECAUSE they're wrecked. Bounded + best-
+    effort: an API failure on one comp never sinks the eval. Returns how many were assessed.
+    """
+    if ai_mode != "deep":
+        return 0
+    from engine import settings as _st
+
+    if not _st.engine_flag("deep_vision_comps", False):
+        return 0
+    yr = vehicle.get("year")
+    make = (vehicle.get("make") or "").upper()
+    model = (vehicle.get("model") or "").upper()
+    if not (yr and make and model):
+        return 0
+    cur = get_cursor(conn)
+    cur.execute(
+        """SELECT external_id FROM retail_listings
+           WHERE UPPER(make) = %s AND UPPER(COALESCE(model,'')) LIKE %s
+             AND year BETWEEN %s AND %s AND asking_price >= 300000 AND is_sold = FALSE
+             AND vision_assessment IS NULL AND photo_urls IS NOT NULL
+             AND external_id NOT IN (SELECT external_id FROM comp_feedback WHERE status='bad')
+           ORDER BY (odometer_km IS NOT NULL) DESC, collected_at DESC LIMIT %s""",
+        (make, model.split()[0] + "%", yr - 2, yr + 2, limit),
+    )
+    ids = [r["external_id"] for r in cur.fetchall()]
+    cur.close()
+    if not ids:
+        return 0
+    from engine.vision import assess_retail_listing
+
+    done = 0
+    for eid in ids:
+        try:
+            assess_retail_listing(eid)  # Haiku triage; stores vision_assessment back
+            done += 1
+        except Exception as e:  # noqa: BLE001 — best effort per comp
+            print(f"[deep vision comps] {eid}: {e}")
+    return done
 
 
 def fetch_comps(

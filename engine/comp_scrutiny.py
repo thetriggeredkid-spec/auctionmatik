@@ -98,8 +98,38 @@ def _title_status(comp: dict) -> str:
     return "clean"
 
 
+def _vision_condition(comp: dict) -> str | None:
+    """Condition read from a comp's stored vision assessment (Haiku photo read), if any.
+    Returns 'damaged' (exclude from the clean anchor — cheap BECAUSE wrecked, not a clean
+    floor), 'rough' (down-weight), or None when there's no usable vision."""
+    v = comp.get("vision")
+    if not isinstance(v, dict) or v.get("error"):
+        return None
+    if v.get("flood_or_frame_concern") is True:
+        return "damaged"
+    try:
+        ext = int(v["exterior_grade"]) if v.get("exterior_grade") is not None else None
+    except (ValueError, TypeError):
+        ext = None
+    damage = v.get("damage_details") or []
+    severities = {(d.get("severity") or "").lower() for d in damage}
+    if (
+        (ext is not None and ext <= 2)
+        or "severe" in severities
+        or (v.get("rust_severity") == "severe")
+    ):
+        return "damaged"
+    if "moderate" in severities or (v.get("rust_severity") == "moderate"):
+        return "rough"
+    return None
+
+
 def _condition_hint(comp: dict) -> str:
-    """'rough', 'clean', or 'unknown' based on condition keywords in the listing text."""
+    """'rough', 'clean', or 'unknown'. A stored vision read (when present) wins over the
+    listing-text keywords — photos beat seller adjectives."""
+    vis = _vision_condition(comp)
+    if vis:  # 'damaged' or 'rough' → penalize like 'rough'
+        return "rough"
     text = _text(comp)
     if any(kw in text for kw in _ROUGH_KW):
         return "rough"
@@ -284,6 +314,7 @@ def scrutinize(subject: dict, comps: list[dict], top_n: int = 6) -> dict:
         age = _age_days(comp)
         discount = _dom_discount(age)
         est_sale = int(asking * (1 - discount))
+        vis_cond = _vision_condition(comp)
         row = {
             **comp,
             "_title": title,
@@ -299,6 +330,11 @@ def scrutinize(subject: dict, comps: list[dict], top_n: int = 6) -> dict:
         }
         if title == "rebuilt":
             row["_reason"] = "rebuilt/salvage title — not a clean comp"
+            excluded.append(row)
+        elif vis_cond == "damaged" and not row["_realized"]:
+            # Photos show heavy damage / flood / frame — it's cheap BECAUSE it's wrecked,
+            # not a clean market floor. Drop it from the anchor (a realized sale always stays).
+            row["_reason"] = "vision: heavy damage/flood/frame — not a clean comp"
             excluded.append(row)
         else:
             clean.append(row)

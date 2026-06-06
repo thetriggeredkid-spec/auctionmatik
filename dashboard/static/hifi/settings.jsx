@@ -195,6 +195,9 @@ function SettingsView() {
             <label className="row gap8" style={{ fontSize: 13.5, cursor: "pointer" }}>
               <input type="checkbox" checked={!!s.engine.deep_autocollect_comps} onChange={(e) => mut((c) => { c.engine.deep_autocollect_comps = e.target.checked; })} style={{ accentColor: "var(--accent)" }} />
               Deep: auto-collect comps <span className="faint" style={{ fontSize: 11 }}>($ Apify)</span></label>
+            <label className="row gap8" style={{ fontSize: 13.5, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!s.engine.deep_vision_comps} onChange={(e) => mut((c) => { c.engine.deep_vision_comps = e.target.checked; })} style={{ accentColor: "var(--accent)" }} />
+              Deep: vision-read comps <span className="faint" style={{ fontSize: 11 }}>($ Haiku, slower — drops wrecked comps)</span></label>
             <div className="col" style={{ gap: 4 }}>
               <span className="eyebrow" style={{ fontSize: 9.5 }}>vision photo cap</span>
               <input value={s.engine.vision_photo_cap} onChange={(e) => mut((c) => { c.engine.vision_photo_cap = num(e.target.value, "int") ?? 30; })} style={fieldStyle()} /></div>

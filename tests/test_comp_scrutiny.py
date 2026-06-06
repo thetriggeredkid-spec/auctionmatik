@@ -3,6 +3,62 @@
 from engine import comp_scrutiny as CS
 
 
+def test_vision_condition_levels():
+    assert (
+        CS._vision_condition({"vision": {"flood_or_frame_concern": True}}) == "damaged"
+    )
+    assert CS._vision_condition({"vision": {"exterior_grade": 2}}) == "damaged"
+    assert (
+        CS._vision_condition({"vision": {"damage_details": [{"severity": "severe"}]}})
+        == "damaged"
+    )
+    assert CS._vision_condition({"vision": {"rust_severity": "moderate"}}) == "rough"
+    assert CS._vision_condition({"vision": {"exterior_grade": 4}}) is None
+    assert CS._vision_condition({"vision": {"error": "x"}}) is None
+    assert CS._vision_condition({}) is None
+
+
+def test_vision_beats_listing_keywords():
+    # listing text says "mint" but the photos show grade-2 → treated as rough, not clean
+    comp = {"title": "mint immaculate", "vision": {"exterior_grade": 2}}
+    assert CS._condition_hint(comp) == "rough"
+
+
+def test_scrutinize_excludes_vision_damaged_comp():
+    subject = {"year": 2019, "make": "FORD", "model": "F-150", "odometer_km": 100_000}
+    comps = [
+        {
+            "asking_price": 3_000_000,
+            "year": 2019,
+            "make": "FORD",
+            "model": "F-150",
+            "odometer_km": 100_000,
+        },
+        {
+            "asking_price": 3_000_000,
+            "year": 2019,
+            "make": "FORD",
+            "model": "F-150",
+            "odometer_km": 100_000,
+        },
+        # a cheap one that photos reveal is wrecked — must NOT anchor the clean value down
+        {
+            "asking_price": 1_500_000,
+            "year": 2019,
+            "make": "FORD",
+            "model": "F-150",
+            "odometer_km": 100_000,
+            "vision": {"flood_or_frame_concern": True},
+        },
+    ]
+    res = CS.scrutinize(subject, comps)
+    assert any("vision" in (e.get("_reason") or "") for e in res["excluded"])
+    assert all(
+        not c.get("vision", {}).get("flood_or_frame_concern") for c in res["clean"]
+    )
+    assert res["anchor"] >= 2_900_000  # the wrecked $15k comp didn't drag it down
+
+
 def test_km_normalize_more_km_adjusts_up():
     # a higher-km comp normalized to a lower-km subject adjusts the price UP
     base = CS._km_normalize(1_000_000, 200_000, 100_000)

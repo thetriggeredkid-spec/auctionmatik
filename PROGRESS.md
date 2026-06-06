@@ -87,8 +87,17 @@ when building the Chrome extension or needing off-Mac / multi-user access.
    (b) once there's volume, mine Track 1 for recurring patterns → framework fixes; flag bad comps.
    **Blocked-ish on data:** the retail comp pool is thin (980 listings, only 251 with km, almost no
    Kijiji) — growing it is a *separate effort* but caps how accurate deep can get.
-2. **Vision on comps** (proposed) — auto-assess each comp's photos to catch damaged comps the way
-   flagging does manually (the deeper fix for comp misreads).
+2. **Vision on comps** ✅ — the systematic version of the manual ⚑ flag. Two parts:
+   (A) *consume* — `comp_scrutiny` reads each comp's stored `vision_assessment`: a clearly-damaged
+   comp (flood/frame, exterior grade ≤2, severe damage, severe rust) is **excluded from the clean
+   anchor** like a rebuilt title (it's cheap BECAUSE it's wrecked, not a clean floor); a moderately
+   rough one is down-weighted. Vision beats listing-text keywords. A realized sale is never excluded.
+   `_advisor_anchor` now selects + decodes `vision_assessment` per comp. (B) *produce* — deep-only
+   `_maybe_vision_comps` runs the cheap Haiku pass on a bounded set of matching comps that have photos
+   but no assessment, gated by the new **`deep_vision_comps`** setting (default **OFF** — extra Haiku
+   calls + latency; toggle in Settings). Verified: injecting a flood/frame read on a comp drops it
+   from the anchor with the right reason. Remaining caveat: only ~26% of comps have photo galleries
+   (collection depth), so Part B's reach is capped until the comp pool is deepened.
 3. **Carfax on a server** — current local agent works; the planned **Chrome extension** version
    sidesteps reCAPTCHA. (Hybrid worker / managed scraping browser are the server-side options.)
 4. Optional: collector to store trim/body columns on scrape; per-vehicle "Load photos" enrichment;
