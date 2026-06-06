@@ -134,3 +134,9 @@ Run: `source venv/bin/activate && python3 -m dashboard.server` → http://127.0.
   and dashboard stay in sync.
 - Models: default to the latest Claude (`claude-sonnet-4-6` reasoning, `claude-haiku-4-5` vision);
   don't downgrade without being asked.
+- **Keep the docs current.** After every major change (new feature, framework/methodology change,
+  schema/migration, new module or CLI, changed run steps), update `PROGRESS.md` in the same change —
+  and any other `.md` that's now stale (`CLAUDE.md`, `dashboard/README.md`, `VALUATION_METHODOLOGY.md`,
+  `TESTING.md`). This is how we avoid losing progress across sessions: a fresh context window should be
+  able to orient from the docs alone. Record what changed, where it lives, and what's next; move the
+  item from "next actions" to "done." Skip only for trivial edits (typos, comments, one-off fixes).
