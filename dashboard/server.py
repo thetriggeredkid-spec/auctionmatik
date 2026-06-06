@@ -358,6 +358,20 @@ def api_vpic_trims():
     )
 
 
+@app.get("/api/ingest_ad")
+def api_ingest_ad():
+    """Scrape a pasted ad URL (FB/Kijiji/AutoTrader) → subject spec + price + photos + seller type."""
+    from collector.ad_ingest import ingest_ad
+
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify(error="url required"), 400
+    try:
+        return jsonify(ingest_ad(url))
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=str(e)), 502
+
+
 @app.get("/api/vin_decode")
 def api_vin_decode():
     """Decode a VIN → spec fields (for the selector's VIN shortcut)."""

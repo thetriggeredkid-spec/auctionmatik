@@ -114,7 +114,7 @@ when building the Chrome extension or needing off-Mac / multi-user access.
 4. Optional: collector to store trim/body columns on scrape; per-vehicle "Load photos" enrichment;
    concurrency-safe lane screening; Settings/profile editor.
 
-### In progress — Appraise ANY vehicle (off-auction) epic
+### Appraise ANY vehicle (off-auction) — ✅ DONE (Phases A–D)
 Plan: `~/.claude/plans/calm-purring-cake.md`. Goal: deep-appraise any vehicle (not just Regal lots) via
 (1) a VMR-style year/make/model/trim selector + VIN shortcut, (2) a pasted ad URL (FB/Kijiji/AutoTrader/
 dealer). Off-auction = **no auction fee**; **tax only where it applies, by seller type** (AB = 5% from a
@@ -155,7 +155,22 @@ business, 0% private). A **location setting** drives both the tax and where comp
   - Verified live end-to-end: 2018 RAV4 XLE private/AB → BID, value $23k, **max buy $19k** (no fee,
     0% tax), deal "above your max buy", deep AI reasoning over 4 local comps ($0.04). Regal 37316 still
     BID $11,260. 87 tests pass, ruff clean, all JSX compiles.
-- Phase D (ad-URL ingestion: FB/Kijiji/AutoTrader/dealer) — next.
+- **Phase D — ad-URL ingestion ✅** (`collector/ad_ingest.py`, `/api/ingest_ad`, Ad-URL card in
+  `appraise.jsx`). Paste a Facebook / Kijiji / AutoTrader URL → extract the subject + price + photos +
+  seller type → prefill the appraisal form (editable) → run the deep appraisal.
+  - **Facebook** → Apify FB actor on the single item URL (its VDP is JS/login-gated); spec from
+    title + description via a Haiku extraction (handles "Make Model Year" titles + km in the body).
+  - **Kijiji** → direct HTTP; clean schema.org JSON-LD `Vehicle` (year/make/model/km/price/photos).
+  - **AutoTrader** → direct HTTP; JSON-LD gives make/price/photos, and the **VIN + year + km** are
+    regex-pulled from the page (54-image AutoScout gallery deduped to 12). The VIN is decoded at ingest
+    so make/model/year/driveline/engine fill reliably even when the slug is sparse.
+  - One Haiku call normalizes the spec from all available text; clean structured fields win; VIN decode
+    hardens. Seller type pre-selects the purchase context (FB/Kijiji private, AutoTrader dealer).
+  - **Dealer sites deliberately deferred** (arbitrary HTML; low priority per Charles).
+  - Verified live on real URLs: FB 2017 Jeep Wrangler ($23k, 9 photos), Kijiji 2014 Ford Fusion ($5.9k),
+    AutoTrader 2018 Audi SQ5 AWD 3.0 V6 (VIN-filled, $28,888, 12 photos); full ingest→appraise round-trip.
+- **Appraise-any-vehicle epic COMPLETE** (Phases A–D). Off-auction deep appraisal via selector / VIN /
+  ad URL, with location-aware tax + comps. Regal flow unchanged throughout.
 
 ### Done (post-QA, June)
 - **Deep-run streaming** — SSE `/api/evaluate_stream`; live stage checklist + elapsed timer on the
