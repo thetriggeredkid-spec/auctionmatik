@@ -218,6 +218,159 @@ def api_evaluate_stream():
     )
 
 
+# ── Off-auction appraisal: any vehicle (manual selector / VIN / scraped ad) ──
+
+
+def _build_subject(d: dict):
+    """(vehicle spec, appraise_subject kwargs) from a request body/args dict."""
+
+    def _int(x):
+        try:
+            return int(x)
+        except (TypeError, ValueError):
+            return None
+
+    veh = {
+        "year": _int(d.get("year")),
+        "make": (d.get("make") or "").strip().upper() or None,
+        "model": (d.get("model") or "").strip().upper() or None,
+        "trim": (d.get("trim") or "").strip() or None,
+        "driveline": (d.get("driveline") or "").strip() or None,
+        "engine": (d.get("engine") or "").strip() or None,
+        "cab": (d.get("cab") or "").strip() or None,
+        "odometer_km": _int(d.get("km") or d.get("odometer_km")),
+        "vin": (d.get("vin") or "").strip().upper() or None,
+    }
+    photos = d.get("photos") or []
+    if isinstance(photos, str):
+        photos = [p for p in photos.split(",") if p.strip()]
+    mode = d.get("mode")
+    ai_mode = (
+        None if mode == "none" else (mode if mode in ("triage", "deep") else "deep")
+    )
+    return veh, {
+        "seller_type": d.get("seller_type") or "private",
+        "photos": photos,
+        "asking_price_dollars": d.get("asking_price") or d.get("asking"),
+        "source": d.get("source") or "manual",
+        "ad_url": d.get("ad_url") or d.get("adUrl"),
+        "profile": d.get("profile") or "charles",
+        "ai_mode": ai_mode,
+    }
+
+
+@app.post("/api/appraise")
+def api_appraise():
+    """Deep-appraise any vehicle (not a Regal lot). Body = spec + seller_type + asking_price."""
+    from dashboard.mapper import appraise_subject
+
+    d = request.get_json(silent=True) or {}
+    veh, kw = _build_subject(d)
+    if not (veh["make"] and veh["model"]):
+        return jsonify(error="make and model required"), 400
+    conn = get_conn()
+    try:
+        v = appraise_subject(conn, veh, **kw)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=str(e)), 500
+    finally:
+        conn.close()
+    return jsonify(vehicle=v)
+
+
+@app.get("/api/appraise_stream")
+def api_appraise_stream():
+    """SSE: stream stage progress for an off-auction deep appraisal, then the result."""
+    import json as _json
+    import queue
+    import threading
+    from flask import Response, stream_with_context
+    from dashboard.mapper import appraise_subject
+
+    veh, kw = _build_subject(request.args)
+    if not (veh["make"] and veh["model"]):
+        return jsonify(error="make and model required"), 400
+
+    q: "queue.Queue" = queue.Queue()
+
+    def work():
+        conn = get_conn()
+        try:
+            v = appraise_subject(
+                conn, veh, progress=lambda s: q.put(("stage", s)), **kw
+            )
+            q.put(("result", v))
+        except Exception as e:  # noqa: BLE001
+            q.put(("error", str(e)))
+        finally:
+            conn.close()
+            q.put(("__done__", None))
+
+    @stream_with_context
+    def gen():
+        threading.Thread(target=work, daemon=True).start()
+        while True:
+            kind, payload = q.get()
+            if kind == "__done__":
+                break
+            ev = "failed" if kind == "error" else kind
+            yield f"event: {ev}\ndata: {_json.dumps(payload)}\n\n"
+
+    return Response(
+        gen(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.get("/api/vpic/makes")
+def api_vpic_makes():
+    from collector.vpic_options import makes
+
+    return jsonify(makes=makes())
+
+
+@app.get("/api/vpic/models")
+def api_vpic_models():
+    from collector.vpic_options import models
+
+    try:
+        year = int(request.args.get("year"))
+    except (TypeError, ValueError):
+        return jsonify(models=[])
+    return jsonify(models=models(request.args.get("make", ""), year))
+
+
+@app.get("/api/vpic/trims")
+def api_vpic_trims():
+    from collector.vpic_options import trims
+
+    try:
+        year = int(request.args.get("year"))
+    except (TypeError, ValueError):
+        return jsonify(trims=[])
+    return jsonify(
+        trims=trims(year, request.args.get("make", ""), request.args.get("model", ""))
+    )
+
+
+@app.get("/api/vin_decode")
+def api_vin_decode():
+    """Decode a VIN → spec fields (for the selector's VIN shortcut)."""
+    from collector.vin_decode import decode_vin
+
+    conn = get_conn()
+    try:
+        decoded = decode_vin(request.args.get("vin"), conn=conn)
+    finally:
+        conn.close()
+    return jsonify(decoded=decoded)
+
+
 @app.post("/api/feedback")
 def api_feedback():
     """Record an operator correction / actual sale price for a contract."""

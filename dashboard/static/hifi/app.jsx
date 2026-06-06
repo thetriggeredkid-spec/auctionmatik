@@ -141,6 +141,7 @@ function TopBar({ theme, setTheme, mode, setMode, profile, setProfile, view, set
               <button className={view === "lane" ? "on" : ""} onClick={() => setView("lane")}>▤ lane</button>
               <button className={view === "card" ? "on" : ""} onClick={() => setView("card")}>▦ card</button>
               <button className={view === "calib" ? "on" : ""} onClick={() => setView("calib")}>◎ calibration</button>
+              <button className={view === "appraise" ? "on" : ""} onClick={() => setView("appraise")}>✦ appraise</button>
               <button className={view === "sold" ? "on" : ""} onClick={() => setView("sold")}>◉ sold log</button>
               <button className={view === "settings" ? "on" : ""} onClick={() => setView("settings")}>⚙ settings</button>
             </span>
@@ -919,6 +920,8 @@ function App() {
         onReload={() => loadSale(selected, null)} />
       {view === "settings"
         ? <SettingsView />
+        : view === "appraise"
+        ? <AppraiseView mode={mode} profile={profile} />
         : view === "sold"
         ? <SoldLogView />
         : view === "calib"

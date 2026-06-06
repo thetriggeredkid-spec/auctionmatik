@@ -23,7 +23,13 @@ from db.connection import get_cursor
 from engine.valuator import valuate
 from engine.comps import get_comp_pool
 from engine.declarations import analyze_declarations
-from engine.advisor import advise, _margin, PROFILES as ADV_PROFILES
+from engine.advisor import (
+    advise,
+    _margin,
+    purchase_context,
+    AUCTION_CTX,
+    PROFILES as ADV_PROFILES,
+)
 from engine.repair_estimate import estimate_repair
 
 # reuse the CLI's listing/anchor/vision plumbing rather than duplicating it
@@ -527,8 +533,51 @@ def evaluate(
                 _p("Loaded overnight deep result")
                 return cached
 
-    # Deep, on a genuine (cache-miss) run: collect retail comps once if we have none, so
-    # the Comps tab populates from the deep result and the AI reasons over a fixed set.
+    v = _appraise_core(
+        conn,
+        vehicle=vehicle,
+        raw=raw,
+        va=va,
+        overrides=overrides,
+        contract=contract,
+        ctx=AUCTION_CTX,
+        ai_mode=ai_mode,
+        profile=profile,
+        progress=progress,
+        collect_comps=collect_comps,
+        autopull_carfax=True,
+    )
+    if ai_mode is None and v:
+        _DET_CACHE[(str(contract), profile)] = v
+    if ai_mode == "deep" and v and store_deep and not v.get("aiError"):
+        put_deep_cache(conn, contract, profile, dh, v)
+    return v
+
+
+def _appraise_core(
+    conn,
+    *,
+    vehicle,
+    raw,
+    va,
+    overrides,
+    contract,
+    ctx,
+    ai_mode,
+    profile,
+    progress=None,
+    collect_comps=None,
+    autopull_carfax=False,
+    ad=None,
+):
+    """The shared deep pipeline over a prepared `vehicle` + purchase `ctx`: comps → valuate →
+    anchor → carfax → advise → repair → VMR → AI appraise → design vehicle. Used by both the
+    Regal flow (evaluate, contract set, ctx=auction) and off-auction appraisals (appraise_subject,
+    contract=None, ad={source,url,asking_price}). Carfax/feedback are contract-only."""
+    _p = progress or (lambda *a, **k: None)
+
+    # Deep, on a genuine run: collect retail comps once if we have none + vision-read them, so the
+    # Comps tab populates and the AI reasons over a fixed set.
     if ai_mode == "deep":
         _p("Searching live comps")
         _maybe_autocollect_comps(conn, vehicle, ai_mode, collect_comps)
@@ -544,8 +593,7 @@ def evaluate(
     ) as e:  # noqa: BLE001 — never let a bad comp pool sink the dashboard
         valuation = {"error": str(e)}
 
-    # The Past Sales tab pulls directly from the regal_sold scored pool (actual
-    # auction results) — independent of the valuator's truncated display list.
+    # Past Sales tab — actual regal_sold results for similar units (works off-contract too).
     try:
         sold_pool = get_comp_pool(vehicle, conn=conn)
     except Exception:  # noqa: BLE001
@@ -553,22 +601,25 @@ def evaluate(
 
     anchor, clean, source, scrutiny = _advisor_anchor(conn, vehicle, valuation)
     if not anchor:
-        anchor = clean = raw.get("reserve_price") or 0
+        anchor = clean = (raw.get("reserve_price") if raw else None) or (
+            (ad or {}).get("asking_price") or 0
+        )
 
-    cur = get_cursor(conn)
-    cur.execute(
-        "SELECT carfax_report FROM regal_listings WHERE contract = %s "
-        "ORDER BY last_updated_at DESC LIMIT 1",
-        (contract,),
-    )
-    row = cur.fetchone()
-    cur.close()
-    carfax = (row.get("carfax_report") if row else None) or None
-
-    # Deep analysis: auto-pull the Carfax when missing so the data points are complete.
-    if carfax is None and ai_mode == "deep":
-        _p("Pulling Carfax")
-        carfax = _maybe_autopull_carfax(contract)
+    # Carfax is contract-keyed (Regal). Off-auction (VIN-based pull) is deferred.
+    carfax = None
+    if contract:
+        cur = get_cursor(conn)
+        cur.execute(
+            "SELECT carfax_report FROM regal_listings WHERE contract = %s "
+            "ORDER BY last_updated_at DESC LIMIT 1",
+            (contract,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        carfax = (row.get("carfax_report") if row else None) or None
+        if carfax is None and ai_mode == "deep" and autopull_carfax:
+            _p("Pulling Carfax")
+            carfax = _maybe_autopull_carfax(contract)
 
     decl = analyze_declarations(
         vehicle.get("declarations") or "", vehicle.get("condition_notes") or ""
@@ -581,6 +632,7 @@ def evaluate(
         vision=va,
         carfax=carfax,
         profile_key="charles",
+        ctx=ctx,
     )
     me = advise(
         vehicle,
@@ -590,6 +642,7 @@ def evaluate(
         vision=va,
         carfax=carfax,
         profile_key="mechanic",
+        ctx=ctx,
     )
     prof_advice = ch if profile == "charles" else me
 
@@ -610,7 +663,7 @@ def evaluate(
             "used_diy": estimate_repair(comps_rc, small_factor=0.5, large_factor=0.55),
         }
 
-    # VMR Canada book value — published sanity check (only on card opens, not lane screening)
+    # VMR Canada book value — published sanity check (only when an AI pass runs).
     vmr = None
     if ai_mode:
         _p("Checking VMR book value")
@@ -630,7 +683,6 @@ def evaluate(
         except Exception as e:  # noqa: BLE001
             print(f"[vmr] {e}")
 
-    # optional AI pass
     calibration = _calibration(conn, vehicle)
     ai, meta, ai_error = None, None, None
     if ai_mode:
@@ -655,6 +707,7 @@ def evaluate(
                 vmr=vmr,
                 carfax=carfax,
                 repair_alternatives=repair_alternatives,
+                ctx=ctx,
                 tool_ctx=(
                     {
                         "conn": conn,
@@ -673,8 +726,8 @@ def evaluate(
         except Exception as e:  # noqa: BLE001 — degrade to the deterministic result
             ai, ai_error = None, str(e)
 
-    feedback = get_feedback(conn, contract)
-    v = _to_design(
+    feedback = get_feedback(conn, contract) if contract else None
+    return _to_design(
         contract,
         vehicle,
         raw,
@@ -697,12 +750,87 @@ def evaluate(
         feedback,
         vmr,
         overrides,
+        ad,
     )
-    if ai_mode is None and v:
-        _DET_CACHE[(str(contract), profile)] = v
-    if ai_mode == "deep" and v and store_deep and not ai_error:
-        put_deep_cache(conn, contract, profile, dh, v)
-    return v
+
+
+# ── off-auction appraisal: any vehicle, no Regal contract ─────────────────────
+
+
+def appraise_subject(
+    conn,
+    vehicle: dict,
+    *,
+    seller_type: str = "private",
+    photos: list | None = None,
+    asking_price_dollars=None,
+    source: str = "manual",
+    ad_url: str | None = None,
+    profile: str = "charles",
+    ai_mode: str = "deep",
+    progress=None,
+) -> dict:
+    """Deep-appraise a vehicle that ISN'T a Regal lot (manual selector, VIN, or scraped ad).
+    No auction fee; tax follows the active location + seller type. `vehicle` is a spec dict
+    (year/make/model/trim/km/…). Returns the same design shape as evaluate()."""
+    from engine import settings as _st
+
+    _p = progress or (lambda *a, **k: None)
+    vehicle.update(prompt_condition(vehicle, skip=True))  # neutral condition defaults
+    if _st.engine_flag("vin_decode", True):
+        apply_vin_decode(conn, vehicle, allow_fetch=True)
+
+    # Purchase context from the active location + seller type (dealer/business taxed, private per rate).
+    kind = "dealer" if seller_type in ("dealer", "business") else "private"
+    ctx = purchase_context(kind, tax_rate=_st.location_tax(kind))
+
+    # Vision on the ad's photos (in-memory — no DB row), like the subject vision read for a lot.
+    va = {}
+    photos = [p for p in (photos or []) if p]
+    if photos and ai_mode == "deep":
+        _p("Reading listing photos")
+        try:
+            from engine.vision import assess_vehicle
+            from engine.vision_factors import vision_to_spec
+
+            summary = " ".join(
+                str(vehicle.get(k) or "") for k in ("year", "make", "model", "trim")
+            ).strip()
+            va = assess_vehicle("adhoc", photos, summary) or {}
+            if va and not va.get("error"):
+                vehicle.update(vision_to_spec(va, vehicle))
+                vehicle["condition_notes"] = _append_dash_lights(
+                    vehicle.get("condition_notes"), va
+                )
+            else:
+                va = {}
+        except Exception as e:  # noqa: BLE001 — vision is best-effort
+            print(f"[appraise_subject vision] {e}")
+            va = {}
+
+    raw = {
+        "main_photo_url": photos[0] if photos else None,
+        "photo_urls": photos,
+        "raw_json": {},
+        "reserve_price": None,
+        "auction_date": None,
+        "vin": vehicle.get("vin"),
+        "carfax_url": None,
+    }
+    ad = {"source": source, "url": ad_url, "asking_price": _d2c(asking_price_dollars)}
+    return _appraise_core(
+        conn,
+        vehicle=vehicle,
+        raw=raw,
+        va=va,
+        overrides={},
+        contract=None,
+        ctx=ctx,
+        ai_mode=ai_mode,
+        profile=profile,
+        progress=progress,
+        ad=ad,
+    )
 
 
 # ── persisted deep cache (overnight batch → instant morning opens) ────────────
@@ -1690,6 +1818,7 @@ def _to_design(
     feedback=None,
     vmr=None,
     overrides=None,
+    ad=None,
 ) -> dict:
     mode_b = prof_advice.get("mode") == "B"
     value_basis = "after-fix retail" if mode_b else "as-is retail"
@@ -1790,10 +1919,24 @@ def _to_design(
         needs_deep, deep_reason = bool(ai.get("needs_deep_dive")), None
     else:
         needs_deep, deep_reason = _deep_recommended(vehicle, scrutiny, comps_design)
+    ad = ad or {}
+    asking = round((ad.get("asking_price") or 0) / 100) or None
+    deal_label = None
+    if asking and max_bid:  # off-auction: is the ad priced below your max buy?
+        deal_label = (
+            "at/under your max buy" if asking <= max_bid else "above your max buy"
+        )
     v = {
-        "contract": str(contract),
+        "contract": str(contract) if contract else None,
         "lot": lot,
         "lotNum": lot_num,
+        "source": ad.get(
+            "source"
+        ),  # None for Regal; 'facebook'/'kijiji'/'autotrader'/'dealer'/'manual'/'vin'
+        "adUrl": ad.get("url"),
+        "askingPrice": asking,
+        "dealLabel": deal_label,
+        "purchaseCtx": prof_advice.get("context"),
         "photo": ph["photo"],
         "photos": ph["photos"],
         "year": vehicle.get("year"),
@@ -1815,7 +1958,7 @@ def _to_design(
         "seller": vehicle.get("seller_type") or "—",
         "reserve": round((raw.get("reserve_price") or 0) / 100) or None,
         "auctionDate": str(raw.get("auction_date")) if raw.get("auction_date") else "—",
-        "regalUrl": REGAL_DETAIL_URL + str(contract),
+        "regalUrl": (REGAL_DETAIL_URL + str(contract)) if contract else None,
         "carfaxUrl": _carfax_url(raw),
         "needsDeep": needs_deep,
         "deepReason": deep_reason,

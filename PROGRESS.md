@@ -136,7 +136,26 @@ business, 0% private). A **location setting** drives both the tax and where comp
   `_scrape_retail_comps` scrapes the active **city** (default Edmonton/AB → Regal flow unchanged: still
   4 Wrangler comps). Switching the active location to Toronto/ON correctly finds no local comps and
   falls back to the wholesale anchor (deep mode then scrapes Toronto). Province codes are clean (AB/BC/SK).
-- Phase C (off-contract appraisal + selector/VIN UI), D (ad-URL ingestion) — next.
+- **Phase C — off-contract appraisal + selector/VIN UI ✅**
+  - **`mapper._appraise_core`**: the shared deep pipeline (comps → valuate → anchor → carfax →
+    advise → repair → VMR → AI appraise → design) extracted from `evaluate()`; takes a prepared
+    `vehicle` + purchase `ctx` + optional `ad`. `evaluate(contract)` is now a thin wrapper (ctx=auction);
+    Regal output unchanged.
+  - **`mapper.appraise_subject(conn, vehicle, *, seller_type, photos, asking_price_dollars, source,
+    ad_url, …)`**: deep-appraise a vehicle with no Regal contract — builds the purchase context from the
+    active location + seller type, runs vision on the ad photos in-memory (`vision.assess_vehicle`),
+    and returns the same design shape (contract=None). `_to_design` now tolerates a null contract and
+    adds `source`/`adUrl`/`askingPrice`/`purchaseCtx`/`dealLabel` (deal read vs the asking price).
+  - **vPIC dropdowns** (`collector/vpic_options.py`): cached make/model lists from NHTSA + trims from
+    VMR. Endpoints `/api/vpic/{makes,models,trims}`, `/api/vin_decode`, `/api/appraise`,
+    `/api/appraise_stream` (SSE).
+  - **`dashboard/static/hifi/appraise.jsx`** + top-bar **✦ appraise**: VMR-style year/make/model/trim
+    selector (datalists fed by vPIC), a VIN-decode shortcut, seller type + asking price, "Run deep
+    appraisal" → streams stages → renders the result in the existing verdict card (`DetailView`).
+  - Verified live end-to-end: 2018 RAV4 XLE private/AB → BID, value $23k, **max buy $19k** (no fee,
+    0% tax), deal "above your max buy", deep AI reasoning over 4 local comps ($0.04). Regal 37316 still
+    BID $11,260. 87 tests pass, ruff clean, all JSX compiles.
+- Phase D (ad-URL ingestion: FB/Kijiji/AutoTrader/dealer) — next.
 
 ### Done (post-QA, June)
 - **Deep-run streaming** — SSE `/api/evaluate_stream`; live stage checklist + elapsed timer on the
