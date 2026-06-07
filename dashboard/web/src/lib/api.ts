@@ -45,8 +45,15 @@ export const api = {
 
   // feedback loop / card actions
   saveFeedback: (body: any) => send<{ feedback: any }>("/api/feedback", "POST", body).then((d) => d.feedback),
-  flagComp: (body: any) => send<any>("/api/comp_flag", "POST", body),
-  saveOverrides: (body: any) => send<{ vehicle: Vehicle }>("/api/overrides", "POST", body).then((d) => d.vehicle),
+  flagComp: (body: { externalId: string; contract: string | null; reason?: string; status?: string }) =>
+    send<any>("/api/comp_flag", "POST", body),
+  saveOverrides: (contract: string, profile: string, overrides: any) =>
+    send<{ vehicle: Vehicle }>("/api/overrides", "POST", { contract, profile, overrides }).then((d) => d.vehicle),
+  saveCarfax: (body: any) => send<{ vehicle: Vehicle }>("/api/carfax", "POST", body).then((d) => d.vehicle),
+  pullCarfax: (contract: string, profile: string) =>
+    send<{ vehicle: Vehicle }>("/api/carfax_pull", "POST", { contract, profile }).then((d) => d.vehicle),
+  runVision: (contract: string, profile: string) =>
+    send<{ vehicle: Vehicle }>("/api/vision_pull", "POST", { contract, profile }).then((d) => d.vehicle),
   calibrationCsvUrl: "/api/calibration.csv",
 }
 
