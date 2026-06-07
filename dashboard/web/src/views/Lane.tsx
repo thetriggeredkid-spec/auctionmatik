@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
-import { Search } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Search, RefreshCw, Play, Loader2 } from "lucide-react"
 import { api } from "@/lib/api"
 import type { Sale, SaleData, Vehicle } from "@/lib/types"
 import { fmt, img, km, VERDICT_LABEL, verdictVariant } from "@/lib/format"
@@ -21,6 +21,42 @@ export function Lane({ profile, date, setDate, onLoaded, onOpen }: {
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [q, setQ] = useState("")
+  const [runJob, setRunJob] = useState<any>(null)   // {status,done,total,current}
+  const [refreshing, setRefreshing] = useState(false)
+  const poll = useRef<number | null>(null)
+
+  function reload() {
+    if (!date) return
+    api.sale(date, profile).then((s) => { setSale(s); onLoaded(s.vehicles || []) }).catch(() => {})
+  }
+
+  async function runAll() {
+    if (!date || !sale) return
+    if (!confirm(`Deep-appraise all ${sale.count} vehicles? ~$${(sale.count * 0.04).toFixed(2)} and a few minutes (cached cars are skipped; you can cancel).`)) return
+    try {
+      const job = await api.runAll(date, profile); setRunJob(job)
+      poll.current = window.setInterval(async () => {
+        const r = await api.runStatus(date).catch(() => null)
+        const j = r?.job || (r?.status === "idle" ? null : r)
+        setRunJob(j)
+        if (!j || j.status !== "running") { clearInterval(poll.current!); poll.current = null; reload() }
+      }, 2500)
+    } catch (e) { setErr(String(e)) }
+  }
+  async function cancelRun() { if (date) await api.runCancel(date).catch(() => {}) }
+
+  async function refresh() {
+    setRefreshing(true)
+    try {
+      await api.refreshListings()
+      const iv = window.setInterval(async () => {
+        const r = await api.refreshStatus().catch(() => null)
+        if (!r || r.status !== "running") { clearInterval(iv); setRefreshing(false); api.sales().then(setSales); reload() }
+      }, 2500)
+    } catch { setRefreshing(false) }
+  }
+
+  useEffect(() => () => { if (poll.current) clearInterval(poll.current) }, [])
 
   useEffect(() => {
     api.sales().then((s) => {
@@ -69,9 +105,31 @@ export function Lane({ profile, date, setDate, onLoaded, onOpen }: {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing} title="Re-scrape Regal listings (lots + photos)">
+            <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+          {runJob?.status === "running" ? (
+            <Button variant="destructive" size="sm" onClick={cancelRun}>Cancel ({runJob.done}/{runJob.total})</Button>
+          ) : (
+            <Button size="sm" onClick={runAll} disabled={!sale}><Play className="size-4" /> Run all (deep)</Button>
+          )}
           {sale && <span className="text-xs text-muted-foreground">{sale.screened}/{sale.count} screened</span>}
         </div>
       </div>
+
+      {runJob?.status === "running" && (
+        <div className="mb-4 rounded-lg border border-primary/50 p-3">
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <Loader2 className="size-4 animate-spin" />
+            Deep-appraising the sale — {runJob.done}/{runJob.total}
+            {runJob.current && <span className="font-mono text-xs text-muted-foreground">#{runJob.current}</span>}
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+            <div className="h-full rounded bg-sky-500 transition-all"
+              style={{ width: `${runJob.total ? (runJob.done / runJob.total) * 100 : 0}%` }} />
+          </div>
+        </div>
+      )}
 
       {loading || !sales ? (
         <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>

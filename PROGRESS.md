@@ -24,7 +24,26 @@ to a real **Vite + React + TypeScript + Tailwind v4 + shadcn/ui** app in **`dash
 - **Cutover:** `server.py` serves `web/dist` when built, else falls back to legacy `static/`. `/api`
   unchanged. Verified: `:8080` serves the shadcn build (hashed assets 200) + `/api` 200.
 - **Build:** `cd dashboard/web && npm run build`. Dev: `npm run dev` (:5173, proxies /api).
+- **index.html served `no-store`** so a normal refresh always picks up a new build (hashed assets
+  cached forever). **Image proxy** `/api/img` (host-allowlist + private-IP guard + raster-only + 8 MiB
+  cap) renders Facebook comp photos the browser can't hotlink.
 - **Pending:** remove the legacy `dashboard/static/hifi/*` once the new UI is eyeballed in the browser.
+
+### Dashboard v2 polish (June 2026) ✅
+- **Engine:** `comp_scrutiny` dedupes the same vehicle reposted as multiple FB ads (dealer angles —
+  contract 33704: 4→1); off-auction (Appraise) fee/tax now follow the advisor's purchase context
+  (`_to_design` was applying the Regal fee unconditionally).
+- **Shell:** collapsible shadcn **sidebar** (`AppSidebar`) replaces the top nav; **fluid** width (data
+  views fill the browser, forms keep a readable max). Native `<select>`→ shadcn **Select**; triage/deep
+  → **ToggleGroup**; **light/dark** toggle.
+- **Charts:** Calibration bias-by-make/band as recharts **bar charts** (accent = **sky**); Lane **search**.
+- **Card:** two-column — analysis left, **photos in a right-hand vertical `ScrollArea` + Vision beneath**
+  (Vision off the tab rail); **impactful declarations** (frame/salvage/rebuilt/mechanical/airbag/hail/
+  CH≥$5k) as ⚠ hero badges; stepped deep-progress checkpoints + current-task subtitle.
+- **Ops:** Lane **Run all (deep)** — `/api/run_all` background job (cached/resumable/cancellable, confirm
+  + cost estimate, progress); **↻ Refresh** — `/api/refresh_listings` re-scrape, plus **auto-refresh**
+  when the soonest sale is ≤2 days out and listings are >24h stale (`_maybe_auto_refresh` in `api_sales`).
+- **Back-nav:** the selected sale date + cursor live in `App.tsx`, so Back returns to where you were.
 
 ---
 

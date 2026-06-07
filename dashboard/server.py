@@ -197,6 +197,9 @@ def api_sales():
 
     conn = get_conn()
     try:
+        _maybe_auto_refresh(
+            conn
+        )  # auto re-scrape when a sale is ≤2 days out + data is stale
         return jsonify(sales=sales(conn))
     finally:
         conn.close()
@@ -752,6 +755,179 @@ def api_prep_cancel():
         job["cancel"] = True
         return jsonify(ok=True)
     return jsonify(ok=False)
+
+
+# ── Run all: deep-appraise every car in a sale (cached, resumable, cancellable) ──
+_RUN_JOBS: dict = {}
+
+
+@app.post("/api/run_all")
+def api_run_all():
+    from dashboard.mapper import sale_contracts, evaluate
+
+    data = request.get_json(silent=True) or {}
+    date_str = data.get("date")
+    if not date_str:
+        return jsonify(error="date required"), 400
+    profile = data.get("profile", "charles")
+    job = _RUN_JOBS.get(date_str)
+    if job and job["status"] == "running":
+        return jsonify(error="a run is already in progress", job=_job_view(job)), 409
+
+    conn = get_conn()
+    try:
+        contracts = sale_contracts(conn, date_str, 1000)
+    finally:
+        conn.close()
+    if not contracts:
+        return jsonify(error=f"no Tuesday/Saturday sale on {date_str}"), 404
+
+    job = {
+        "status": "running",
+        "total": len(contracts),
+        "done": 0,
+        "current": None,
+        "results": [],
+        "started": time.time(),
+        "cancel": False,
+        "date": date_str,
+    }
+    _RUN_JOBS[date_str] = job
+
+    def run():
+        conn2 = get_conn()
+        try:
+            for c in contracts:
+                if job["cancel"]:
+                    job["status"] = "cancelled"
+                    break
+                job["current"] = c
+                try:
+                    # use_deep_cache=True → already-deep cars are instant (resumable); only
+                    # missing ones compute. store_deep persists each so opens stay instant.
+                    v = evaluate(
+                        conn2,
+                        c,
+                        profile=profile,
+                        ai_mode="deep",
+                        use_deep_cache=True,
+                        store_deep=True,
+                    )
+                    st = {
+                        "contract": c,
+                        "verdict": (v or {}).get("verdict"),
+                        "maxBid": (v or {}).get("maxBid"),
+                    }
+                except Exception as e:  # noqa: BLE001
+                    st = {"contract": c, "error": str(e)}
+                job["results"].append(st)
+                job["done"] += 1
+            if job["status"] == "running":
+                job["status"] = "done"
+        finally:
+            job["current"] = None
+            conn2.close()
+
+    _threading.Thread(target=run, daemon=True).start()
+    return jsonify(job=_job_view(job))
+
+
+@app.get("/api/run_status")
+def api_run_status():
+    job = _RUN_JOBS.get(request.args.get("date"))
+    return jsonify(status="idle") if not job else jsonify(job=_job_view(job))
+
+
+@app.post("/api/run_cancel")
+def api_run_cancel():
+    data = request.get_json(silent=True) or {}
+    job = _RUN_JOBS.get(data.get("date"))
+    if job and job["status"] == "running":
+        job["cancel"] = True
+        return jsonify(ok=True)
+    return jsonify(ok=False)
+
+
+# ── Refresh Regal listings (re-scrape) — manual + auto when a sale is imminent ──
+_REFRESH_JOB: dict = {}
+
+
+def _refresh_view() -> dict:
+    j = _REFRESH_JOB
+    return {
+        "status": j.get("status", "idle"),
+        "error": j.get("error"),
+        "elapsed": round(time.time() - j["started"], 1) if j.get("started") else 0,
+        "finished": j.get("finished"),
+    }
+
+
+def _start_refresh() -> bool:
+    """Kick a background re-scrape of regal_listings (one at a time). Returns False if already running."""
+    if _REFRESH_JOB.get("status") == "running":
+        return False
+    _REFRESH_JOB.clear()
+    _REFRESH_JOB.update({"status": "running", "started": time.time()})
+
+    def run():
+        try:
+            from collector.regal_listings import collect
+
+            collect()
+            from dashboard.mapper import _DET_CACHE
+
+            _DET_CACHE.clear()  # fresh lots/photos → re-screen
+            _REFRESH_JOB["status"] = "done"
+        except Exception as e:  # noqa: BLE001
+            _REFRESH_JOB["status"] = "error"
+            _REFRESH_JOB["error"] = str(e)
+        finally:
+            _REFRESH_JOB["finished"] = time.time()
+
+    _threading.Thread(target=run, daemon=True).start()
+    return True
+
+
+def _maybe_auto_refresh(conn) -> None:
+    """Regal republishes the lane ~2 days before a sale. If the soonest sale is ≤2 days out and our
+    listings are >24h stale, kick one background re-scrape (throttled by the running flag).
+    """
+    import datetime as _dt
+
+    if _REFRESH_JOB.get("status") == "running":
+        return
+    try:
+        from db.connection import get_cursor
+
+        cur = get_cursor(conn)
+        cur.execute(
+            "SELECT min(auction_date) d, max(last_updated_at) u FROM regal_listings "
+            "WHERE auction_date >= CURRENT_DATE"
+        )
+        row = cur.fetchone()
+        cur.close()
+    except Exception:  # noqa: BLE001
+        return
+    if not row or not row.get("d"):
+        return
+    days = (row["d"] - _dt.date.today()).days
+    u = row.get("u")
+    stale = (u is None) or (
+        _dt.datetime.now(_dt.timezone.utc) - u
+    ).total_seconds() > 86400
+    if days <= 2 and stale:
+        _start_refresh()
+
+
+@app.post("/api/refresh_listings")
+def api_refresh_listings():
+    started = _start_refresh()
+    return jsonify(job=_refresh_view(), started=started)
+
+
+@app.get("/api/refresh_status")
+def api_refresh_status():
+    return jsonify(_refresh_view())
 
 
 @app.get("/api/settings")

@@ -57,6 +57,13 @@ export const api = {
     send<{ vehicle: Vehicle }>("/api/carfax_pull", "POST", { contract, profile }).then((d) => d.vehicle),
   runVision: (contract: string, profile: string) =>
     send<{ vehicle: Vehicle }>("/api/vision_pull", "POST", { contract, profile }).then((d) => d.vehicle),
+  // sale-level batches
+  runAll: (date: string, profile: string) => send<{ job: any }>("/api/run_all", "POST", { date, profile }).then((d) => d.job),
+  runStatus: (date: string) => get<any>(`/api/run_status?date=${date}`),
+  runCancel: (date: string) => send<any>("/api/run_cancel", "POST", { date }),
+  refreshListings: () => send<{ job: any; started: boolean }>("/api/refresh_listings", "POST"),
+  refreshStatus: () => get<any>("/api/refresh_status"),
+
   calibrationCsvUrl: "/api/calibration.csv",
 }
 
