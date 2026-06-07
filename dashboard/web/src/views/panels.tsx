@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { api } from "@/lib/api"
 import type { Vehicle } from "@/lib/types"
-import { fmt, km as fmtKm } from "@/lib/format"
+import { fmt, img } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,6 +47,38 @@ export function Waterfall({ v }: { v: Vehicle }) {
   )
 }
 
+// ── Key adjustments — visual +/− breakdown (was raw text) ────────────────────
+export function AdjustmentsViz({ items }: { items: any[] }) {
+  const parsed = (items || []).map((a) => {
+    const s = String(a.impact || "")
+    const neg = s.includes("-") || s.includes("−")
+    const isPct = s.includes("%")
+    const num = parseFloat(s.replace(/[^0-9.]/g, "")) || 0
+    return { ...a, neg, isPct, num }
+  })
+  const maxDollar = Math.max(1, ...parsed.filter((p) => !p.isPct).map((p) => p.num))
+  if (!parsed.length) return null
+  return (
+    <ul className="space-y-2.5">
+      {parsed.map((a, i) => (
+        <li key={i} className="grid grid-cols-[1fr_auto] items-center gap-x-4">
+          <div className="min-w-0">
+            <div className="font-medium">{a.factor}</div>
+            <div className="truncate text-xs text-muted-foreground">{a.evidence}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="hidden h-2 w-24 overflow-hidden rounded bg-muted sm:block">
+              <div className={`h-full ${a.neg ? "bg-rose-500" : "bg-emerald-500"}`}
+                style={{ width: a.isPct ? "45%" : `${Math.min(100, (a.num / maxDollar) * 100)}%` }} />
+            </div>
+            <span className={`w-20 text-right font-mono text-sm font-semibold tabular-nums ${a.neg ? "text-rose-500" : "text-emerald-500"}`}>{a.impact}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 // ── Comps ─────────────────────────────────────────────────────────────────────
 export function CompsPanel({ v, onChange }: { v: Vehicle; onChange: () => void }) {
   const c = v.comps
@@ -70,8 +102,8 @@ export function CompsPanel({ v, onChange }: { v: Vehicle; onChange: () => void }
             <tr key={i} className="border-t">
               <td className="px-2 py-1.5">
                 <div className="flex items-center gap-2">
-                  {cm.photo && <img src={cm.photo} alt="" className="h-9 w-12 shrink-0 rounded object-cover"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />}
+                  {cm.photo && <img src={img(cm.photo)} alt="" loading="lazy" className="h-9 w-12 shrink-0 rounded bg-muted object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden" }} />}
                   <div className="min-w-0">
                     {cm.url ? <a className="text-primary hover:underline" href={cm.url} target="_blank" rel="noopener">{cm.y} {cm.mk} {cm.md}{cm.trim ? " " + cm.trim : ""} ↗</a>
                       : <span>{cm.y} {cm.mk} {cm.md}</span>}
@@ -149,8 +181,8 @@ export function VisionPanel({ v, profile, photos, onUpdate }: { v: Vehicle; prof
       {pics.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {pics.slice(0, 12).map((p, i) => (
-            <img key={i} src={p} alt="" className="h-24 shrink-0 rounded-md border object-cover"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
+            <img key={i} src={img(p)} alt="" loading="lazy" className="h-24 shrink-0 rounded-md border bg-muted object-cover"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden" }} />
           ))}
         </div>
       )}

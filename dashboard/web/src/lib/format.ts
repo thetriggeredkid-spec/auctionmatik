@@ -10,6 +10,14 @@ export function km(n: number | null | undefined): string {
   return n.toLocaleString() + " km"
 }
 
+// Route external comp images (esp. Facebook CDN, which 403s on hotlink) through the
+// server-side proxy so they render. Regal CloudFront loads fine direct, so leave it.
+export function img(url: string | null | undefined): string | undefined {
+  if (!url) return undefined
+  if (url.includes("cloudfront.net") || url.startsWith("/")) return url
+  return "/api/img?u=" + encodeURIComponent(url)
+}
+
 export const VERDICT_LABEL: Record<string, string> = {
   BID: "BID",
   BID_TO_FIX: "BID-TO-FIX",

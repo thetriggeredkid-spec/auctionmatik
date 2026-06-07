@@ -23,6 +23,9 @@ export const api = {
     get<{ sale: SaleData }>(`/api/sale?date=${date}&profile=${profile}&screen=${screen}`).then((d) => d.sale),
   evaluate: (contract: string, mode: "triage" | "deep" | "none", profile: string) =>
     get<{ vehicle: Vehicle }>(`/api/evaluate?contract=${contract}&mode=${mode}&profile=${profile}`).then((d) => d.vehicle),
+  // re-display a persisted deep result (deep_cache) without recomputing
+  evaluateCachedDeep: (contract: string, profile: string) =>
+    get<{ vehicle: Vehicle }>(`/api/evaluate?contract=${contract}&mode=deep&profile=${profile}&cached_only=1`).then((d) => d.vehicle),
 
   calibration: () => get<any>("/api/calibration"),
   settings: () => get<{ settings: any }>("/api/settings").then((d) => d.settings),

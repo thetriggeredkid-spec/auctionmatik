@@ -890,6 +890,14 @@ def get_deep_cache(
     return payload
 
 
+def get_cached_deep(conn, contract: str, profile: str) -> dict | None:
+    """The stored deep result for (contract, profile) regardless of inputs-hash freshness —
+    used to RE-DISPLAY a persisted deep appraisal on reload/navigation without recomputing
+    (the deep run continues server-side and is cached even if the user navigates away).
+    """
+    return get_deep_cache(conn, contract, profile, None)
+
+
 def put_deep_cache(
     conn, contract: str, profile: str, inputs_hash: str | None, payload: dict
 ) -> None:

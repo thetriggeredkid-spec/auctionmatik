@@ -78,6 +78,46 @@ def health():
     return jsonify(ok=True, db=db_ok, ai=bool(os.getenv("ANTHROPIC_API_KEY")))
 
 
+# Hosts whose images we'll proxy (comp/listing CDNs). Facebook CDN images are
+# referrer-locked + 403 when hotlinked from the browser; fetching them server-side
+# (and streaming) lets comp thumbnails render. Restricted to known image CDNs (SSRF guard).
+_IMG_HOSTS = (
+    "fbcdn.net",
+    "cloudfront.net",
+    "kijiji.ca",
+    "autoscout24.net",
+    "akamaized.net",
+    "licdn.com",
+)
+
+
+@app.get("/api/img")
+def api_img():
+    """Proxy an external listing/comp image server-side (browser can't hotlink FB CDN)."""
+    import requests
+    from urllib.parse import urlparse
+    from flask import Response
+
+    url = request.args.get("u", "")
+    host = (urlparse(url).netloc or "").lower()
+    if not url.startswith("https://") or not any(
+        host.endswith(h) or h in host for h in _IMG_HOSTS
+    ):
+        return jsonify(error="disallowed url"), 400
+    try:
+        r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        ctype = (r.headers.get("Content-Type") or "").split(";")[0]
+        if r.status_code != 200 or not ctype.startswith("image/"):
+            return ("", 404)
+        return Response(
+            r.content,
+            mimetype=ctype,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except Exception:  # noqa: BLE001
+        return ("", 404)
+
+
 @app.get("/api/sales")
 def api_sales():
     """Index of upcoming sales (Tuesday Timed Auctions + Saturday Super Sales)."""
@@ -144,7 +184,7 @@ def api_fetch_comps():
 
 @app.get("/api/evaluate")
 def api_evaluate():
-    from dashboard.mapper import evaluate
+    from dashboard.mapper import evaluate, get_cached_deep
 
     contract = request.args.get("contract")
     if not contract:
@@ -152,9 +192,17 @@ def api_evaluate():
     mode = request.args.get("mode", "triage")
     profile = request.args.get("profile", "charles")
     ai_mode = mode if mode in ("triage", "deep") else None
+    # cached_only: re-display a persisted deep result without recomputing (no AI cost).
+    # If none is cached, fall back to the fast deterministic pass so the card still renders.
+    cached_only = request.args.get("cached_only") in ("1", "true", "yes")
     conn = get_conn()
     try:
-        vehicle = evaluate(conn, contract, profile=profile, ai_mode=ai_mode)
+        if ai_mode == "deep" and cached_only:
+            vehicle = get_cached_deep(conn, contract, profile) or evaluate(
+                conn, contract, profile=profile, ai_mode=None
+            )
+        else:
+            vehicle = evaluate(conn, contract, profile=profile, ai_mode=ai_mode)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=str(e)), 500
     finally:
