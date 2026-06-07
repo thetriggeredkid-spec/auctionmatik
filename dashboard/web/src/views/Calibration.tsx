@@ -1,13 +1,40 @@
 import { useEffect, useState } from "react"
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { api } from "@/lib/api"
 import { fmt } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card as UICard, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 
 const pct = (x: number | null | undefined) => (x == null ? "—" : (x > 0 ? "+" : "") + x + "%")
 const biasColor = (b: number | null | undefined) =>
   b == null ? "text-muted-foreground" : Math.abs(b) < 5 ? "text-emerald-500" : Math.abs(b) < 12 ? "text-amber-500" : "text-destructive"
+
+// chart accent = shadcn "sky"
+const _chartCfg = { mae: { label: "MAE %", color: "var(--color-sky-500, #0ea5e9)" } }
+
+function BiasBars({ title, rows }: { title: string; rows: any[] }) {
+  const data = (rows || []).slice(0, 10).map((r) => ({ key: r.key, mae: r.mae ?? 0, bias: r.bias, n: r.n }))
+  return (
+    <UICard className="min-w-[300px] flex-1">
+      <CardHeader><CardTitle className="text-sm">MAE by {title}</CardTitle></CardHeader>
+      <CardContent>
+        {data.length ? (
+          <ChartContainer config={_chartCfg} className="h-[200px] w-full">
+            <BarChart data={data} margin={{ left: -12, right: 8, top: 4 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="key" tickLine={false} axisLine={false} tickMargin={6} fontSize={10} interval={0} angle={-30} textAnchor="end" height={48} />
+              <YAxis tickLine={false} axisLine={false} width={34} fontSize={10} unit="%" />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="mae" fill="var(--color-mae)" radius={4} />
+            </BarChart>
+          </ChartContainer>
+        ) : <div className="py-8 text-sm text-muted-foreground">No data yet.</div>}
+      </CardContent>
+    </UICard>
+  )
+}
 
 function Metric({ label, agg, sub }: { label: string; agg: any; sub: string }) {
   return (
@@ -81,7 +108,7 @@ export function Calibration() {
                 <div className="mt-1 text-[11px] text-muted-foreground">n={r.verdictN || 0} · {(r.modes || []).map((m: any) => `${m.mode} ${m.n}`).join(" · ")}</div>
               </CardContent></UICard>
             </div>
-            <div className="flex flex-wrap gap-3"><SegTable title="make" rows={r.byMake} /><SegTable title="band" rows={r.byBand} /></div>
+            <div className="flex flex-wrap gap-3"><BiasBars title="make" rows={r.byMake} /><BiasBars title="band" rows={r.byBand} /></div>
           </>
         )}
 
@@ -102,7 +129,7 @@ export function Calibration() {
                 <div className="mt-1 text-[11px] text-muted-foreground">n={w.verdictN || 0}</div>
               </CardContent></UICard>
             </div>
-            <div className="flex flex-wrap gap-3"><SegTable title="make" rows={w.byMake} /><SegTable title="band" rows={w.byBand} /></div>
+            <div className="flex flex-wrap gap-3"><BiasBars title="make" rows={w.byMake} /><BiasBars title="band" rows={w.byBand} /></div>
           </>
         )}
 

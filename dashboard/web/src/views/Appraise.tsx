@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card as UICard, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type Form = {
   year: string; make: string; model: string; trim: string; driveline: string
@@ -149,11 +150,13 @@ export function Appraise({ mode, profile }: { mode: Mode; profile: string }) {
         <CardContent className="grid grid-cols-2 gap-3">
           <div className="grid gap-1.5">
             <Label className="text-xs">seller type (sets tax)</Label>
-            <select value={f.seller_type} onChange={(e) => set("seller_type", e.target.value)}
-              className="h-9 rounded-md border bg-background px-3 text-sm">
-              <option value="private">private</option>
-              <option value="dealer">dealer / business</option>
-            </select>
+            <Select value={f.seller_type} onValueChange={(v) => v && set("seller_type", v)}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="private">private</SelectItem>
+                <SelectItem value="dealer">dealer / business</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Field label="asking price $" k="asking_price" f={f} set={set} type="number" />
         </CardContent>
