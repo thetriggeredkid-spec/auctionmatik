@@ -44,6 +44,7 @@ export default function App() {
         <header className="sticky top-0 z-10 flex h-12 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
           <SidebarTrigger />
           <span className="font-heading text-sm font-medium text-muted-foreground">{TITLES[view]}</span>
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground/60" title="build marker — if this looks old after a refresh, your browser is caching">build {__BUILD_ID__}</span>
         </header>
         <main className="min-h-[calc(100svh-3rem)]">
           {view === "lane" && (

@@ -5,6 +5,10 @@ import tailwindcss from "@tailwindcss/vite"
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    // visible build marker so a stale cache is obvious at a glance
+    __BUILD_ID__: JSON.stringify(new Date().toISOString().slice(5, 16).replace("T", " ")),
+  },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
