@@ -3,6 +3,9 @@ import { Nav } from "@/components/Nav"
 import { Lane } from "@/views/Lane"
 import { Card } from "@/views/Card"
 import { Appraise } from "@/views/Appraise"
+import { SoldLog } from "@/views/SoldLog"
+import { Calibration } from "@/views/Calibration"
+import { Settings } from "@/views/Settings"
 import { Toaster } from "@/components/ui/sonner"
 import type { Mode, Vehicle, ViewName } from "@/lib/types"
 
@@ -34,9 +37,9 @@ export default function App() {
         ? <Card vehicle={vehicle} mode={mode} profile={profile} onBack={() => setView("lane")} />
         : <Placeholder title="No vehicle selected" />)}
       {view === "appraise" && <Appraise mode={mode} profile={profile} />}
-      {view === "sold" && <Placeholder title="Sold log" />}
-      {view === "calib" && <Placeholder title="Calibration" />}
-      {view === "settings" && <Placeholder title="Settings" />}
+      {view === "sold" && <SoldLog />}
+      {view === "calib" && <Calibration />}
+      {view === "settings" && <Settings />}
       <Toaster />
     </div>
   )
