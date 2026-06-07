@@ -25,7 +25,7 @@ export function AppSidebar({
   theme: "dark" | "light"; toggleTheme: () => void
 }) {
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" variant="floating">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-1 py-1.5">
           <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground font-heading text-sm font-bold">A</div>
