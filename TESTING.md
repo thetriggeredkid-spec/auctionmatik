@@ -23,10 +23,14 @@ value**, and a **max bid**, with full reasoning.
 - In the dashboard: **triage = the deterministic result** (instant, identical to the lane);
   **deep = the AI pass**.
 
-**Stack:** Python 3, PostgreSQL 16 (Docker, port 5433), Flask API, React-over-Babel SPA
-(recreated from a Claude Design handoff), `anthropic` (Sonnet reasoning + Haiku vision),
+**Stack:** Python 3, PostgreSQL 16 (Docker, port 5433), Flask API, and a **Vite + React + TypeScript
++ Tailwind v4 + shadcn/ui** SPA in `dashboard/web/` (built → `web/dist`, which Flask serves; June 2026
+re-platform from the old React-over-Babel UI). `anthropic` (Sonnet reasoning + Haiku vision),
 `apify-client` (FB/Kijiji scraping), `playwright` (local Carfax agent).
-Run: `python3 -m dashboard.server` → http://127.0.0.1:8080
+Run: `cd dashboard/web && npm install && npm run build`, then `python3 -m dashboard.server` →
+http://127.0.0.1:8080 (header shows a `build` marker; if the UI looks stale it's browser cache/an
+extension, not the code — see CLAUDE.md). **Also new:** the **✦ Appraise** tab deep-appraises any
+vehicle off-auction (selector / VIN / pasted FB-Kijiji-AutoTrader ad URL) — see CLAUDE.md + PROGRESS.md.
 
 ### Data sources
 | Source | Table/Module | Role |

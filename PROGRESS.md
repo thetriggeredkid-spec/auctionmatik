@@ -84,12 +84,16 @@ to a real **Vite + React + TypeScript + Tailwind v4 + shadcn/ui** app in **`dash
 ## How to run
 ```bash
 docker compose up -d
-source venv/bin/activate
-pip install -r requirements.txt
+source venv/bin/activate && pip install -r requirements.txt
 playwright install chromium                 # for local Carfax auto-pull (uses your Chrome)
-python3 -m dashboard.server                 # → http://127.0.0.1:8080
+cd dashboard/web && npm install && npm run build && cd ../..   # build the Vite+shadcn SPA → web/dist
+python3 -m dashboard.server                 # → http://127.0.0.1:8080 (serves web/dist)
+# frontend dev w/ hot reload: cd dashboard/web && npm run dev (:5173, proxies /api → :8080)
 # CLI still works: python3 evaluate.py --contract 37316 --deep
 ```
+Note: the header shows a `build <date time>` marker; `index.html` is served `no-store` so a normal
+refresh always loads a new build. If the UI ever "looks unchanged," check that marker (and browser
+extensions can hide the fixed sidebar — verify in Incognito).
 Keep data fresh: `python3 -m collector.regal_listings` (lane), `regal_market` (sold comps),
 `retail_comps --query "<make model>"` (retail anchors), `regal_enrich` (photos/carfax_url).
 
@@ -99,6 +103,24 @@ DB is local Docker Postgres (32 MB, ~12.5k rows) — fine for now; revisit hoste
 when building the Chrome extension or needing off-Mac / multi-user access.
 
 ## Current direction / next actions
+
+**Genuinely next (open):**
+1. **Feed the calibration loop** — log real outcomes in the **Correct** tab (deep mode) + add **personal
+   sales** (◉ sold log); only ~1 retail correction so far. Then mine Track-1 for systematic error → tune
+   `comp_scrutiny`/claim-fraction. This is THE path to deep accuracy; it's data-starved, not code-blocked.
+2. **Comp-pool depth (operational)** — run `collector.screen_comps --next` before sales; grow Kijiji
+   (single-VDP works via `ad_ingest`; targeted **Kijiji search** scraping for the batch is still a TODO);
+   durable comp photos (FB CDN URLs expire — would need storing images at scrape time).
+3. **Tier-2 engine:** recency-weight the retail anchor (methodology §2.1, currently none); broaden
+   ad_ingest dealer-site support (deferred); optional: schedule the overnight deep/refresh jobs (held off).
+4. **Cleanup:** remove the legacy `dashboard/static/hifi/*` once the shadcn UI is fully trusted.
+
+**Done this session (✅ below):** calibration two-track + deep instrumentation · personal sold log · km
+parser fix · vision-on-comps · VIN decode · comp-coverage batch · **appraise-any-vehicle epic** (purchase
+context + location/tax, off-contract `appraise_subject`, selector/VIN, ad-URL ingest) · **dashboard
+re-platform to Vite+shadcn** + v2 polish (sidebar, charts, card redesign, run-all/refresh, image proxy).
+
+---
 00. **Comp-coverage batch** ✅ (`collector/screen_comps.py`) — proactively deepen the retail comp
    pool before screening (the data-layer fix for the thin/shallow pool that caps deep accuracy +
    vision-on-comps reach). Walks an upcoming sale's vehicles (`--date`/`--next`) or one ad-hoc model
