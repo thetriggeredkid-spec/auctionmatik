@@ -91,6 +91,11 @@ _IMG_HOSTS = (
 )
 
 
+# Only raster image types are served — never image/svg+xml (an SVG served same-origin
+# can carry <script> → XSS). Hardening headers below prevent sniffing/script execution.
+_IMG_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"}
+
+
 @app.get("/api/img")
 def api_img():
     """Proxy an external listing/comp image server-side (browser can't hotlink FB CDN)."""
@@ -99,20 +104,33 @@ def api_img():
     from flask import Response
 
     url = request.args.get("u", "")
-    host = (urlparse(url).netloc or "").lower()
+    # Match on the real connect host (hostname, not netloc — which includes user@/:port and
+    # is spoofable, e.g. https://fbcdn.net@169.254.169.254/). Require exact or dotted-suffix.
+    host = (urlparse(url).hostname or "").lower().rstrip(".")
     if not url.startswith("https://") or not any(
-        host.endswith(h) or h in host for h in _IMG_HOSTS
+        host == h or host.endswith("." + h) for h in _IMG_HOSTS
     ):
         return jsonify(error="disallowed url"), 400
     try:
-        r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
-        ctype = (r.headers.get("Content-Type") or "").split(";")[0]
-        if r.status_code != 200 or not ctype.startswith("image/"):
-            return ("", 404)
+        # No redirects — a 30x could bounce to an internal host, re-opening the SSRF hole.
+        r = requests.get(
+            url,
+            timeout=12,
+            allow_redirects=False,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if r.status_code != 200 or ctype not in _IMG_TYPES:
+            return ("", 415 if ctype not in _IMG_TYPES else 404)
         return Response(
             r.content,
             mimetype=ctype,
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": 'inline; filename="img"',
+                "Content-Security-Policy": "default-src 'none'; sandbox",
+            },
         )
     except Exception:  # noqa: BLE001
         return ("", 404)
