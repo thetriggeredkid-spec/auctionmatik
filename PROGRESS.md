@@ -62,6 +62,16 @@ DB is local Docker Postgres (32 MB, ~12.5k rows) — fine for now; revisit hoste
 when building the Chrome extension or needing off-Mac / multi-user access.
 
 ## Current direction / next actions
+00. **Comp-coverage batch** ✅ (`collector/screen_comps.py`) — proactively deepen the retail comp
+   pool before screening (the data-layer fix for the thin/shallow pool that caps deep accuracy +
+   vision-on-comps reach). Walks an upcoming sale's vehicles (`--date`/`--next`) or one ad-hoc model
+   (`--make/--model/--year`), dedupes to distinct year/make/models, and for each that lacks enough
+   **local** comps (`--min-have`, location-aware via `_retail_comp_count`) runs a DETAILED Facebook
+   pull (km + post date + photo galleries) for the active location's city. Idempotent (skips models
+   already deep enough), bounded (`--max-queries`, `--per`), `--dry-run` planner. **MANUAL ONLY — not
+   scheduled.** Verified: dry-run planned 38 models (9 already ≥8 comps, skipped) for the next sale; a
+   live `FORD F-150` query upserted 10 FB listings. FB-only for now (targeted Kijiji search-URL
+   scraping is a follow-up; Kijiji single-VDP works via `ad_ingest`). $ Apify per scrape.
 0. **Personal sold log → realized comps** ✅ (`db/migrate_personal_sales.sql`) — hand-entered past
    sales (year/make/model/trim/km/condition/sale price/date) via the top-bar **◉ sold log** view
    (`/api/personal_sales` GET/POST/DELETE). They join the deep-mode comp pool as **realized comps**:
