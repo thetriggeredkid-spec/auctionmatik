@@ -89,7 +89,7 @@ export function Appraise({ mode, profile }: { mode: Mode; profile: string }) {
   if (result) return <Card vehicle={result} mode={mode} profile={profile} onBack={() => setResult(null)} />
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
+    <div className="mx-auto max-w-3xl px-4 py-6 lg:px-8">
       <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Off-auction · no buyer fee · tax per your location</div>
       <h1 className="mb-5 font-heading text-3xl font-semibold">Appraise any vehicle</h1>
 

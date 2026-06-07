@@ -47,11 +47,11 @@ export function Calibration() {
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => { api.calibration().then(setD).catch((e) => setErr(String(e))) }, [])
   if (err) return <div className="p-8 text-sm text-muted-foreground">{err}</div>
-  if (!d) return <div className="mx-auto max-w-6xl px-4 py-6"><Skeleton className="h-64 w-full" /></div>
+  if (!d) return <div className="w-full px-4 py-6 lg:px-8"><Skeleton className="h-64 w-full" /></div>
 
   const r = d.retail || {}, w = d.wholesale || {}
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
+    <div className="w-full px-4 py-6 lg:px-8">
       <div className="mb-1 flex items-end justify-between">
         <div>
           <div className="text-xs uppercase tracking-wide text-muted-foreground">Engine vs reality · {d.total} outcomes</div>

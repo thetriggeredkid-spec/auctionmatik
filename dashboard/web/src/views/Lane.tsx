@@ -1,26 +1,31 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { Search } from "lucide-react"
 import { api } from "@/lib/api"
 import type { Sale, SaleData, Vehicle } from "@/lib/types"
-import { fmt, km, VERDICT_LABEL, verdictVariant } from "@/lib/format"
+import { fmt, img, km, VERDICT_LABEL, verdictVariant } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-export function Lane({ profile, onLoaded, onOpen }: {
+export function Lane({ profile, date, setDate, onLoaded, onOpen }: {
   profile: string
+  date: string
+  setDate: (d: string) => void
   onLoaded: (vehicles: Vehicle[]) => void
   onOpen: (index: number) => void
 }) {
   const [sales, setSales] = useState<Sale[] | null>(null)
-  const [date, setDate] = useState<string>("")
   const [sale, setSale] = useState<SaleData | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [q, setQ] = useState("")
 
   useEffect(() => {
     api.sales().then((s) => {
       setSales(s)
-      if (s.length) setDate(s[0].date)
+      if (!date && s.length) setDate(s[0].date)   // only default when nothing was selected
     }).catch((e) => setErr(String(e)))
   }, [])
 
@@ -33,27 +38,38 @@ export function Lane({ profile, onLoaded, onOpen }: {
       .finally(() => setLoading(false))
   }, [date, profile])
 
+  const rows = useMemo(() => {
+    const list = sale?.vehicles || []
+    if (!q.trim()) return list.map((v, i) => ({ v, i }))
+    const needle = q.toLowerCase()
+    return list.map((v, i) => ({ v, i })).filter(({ v }) =>
+      `${v.year} ${v.make} ${v.model} ${v.trim} ${v.lot} ${v.contract}`.toLowerCase().includes(needle))
+  }, [sale, q])
+
   if (err) return <div className="p-8 text-sm text-muted-foreground">{err}</div>
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
+    <div className="w-full px-4 py-6 lg:px-8">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-wide text-muted-foreground">The lane</div>
-          <h1 className="font-heading text-3xl font-semibold">
-            {sale ? `${sale.label} · ${sale.date}` : "Upcoming sale"}
-          </h1>
+          <h1 className="font-heading text-3xl font-semibold">{sale ? `${sale.label} · ${sale.date}` : "Upcoming sale"}</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <select value={date} onChange={(e) => setDate(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm">
-            {(sales || []).map((s) => (
-              <option key={s.date} value={s.date}>{s.day} {s.date} · {s.label} ({s.count})</option>
-            ))}
-          </select>
-          {sale && (
-            <span className="text-xs text-muted-foreground">{sale.screened}/{sale.count} screened</span>
-          )}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search make / model / lot / #"
+              className="w-56 pl-8" />
+          </div>
+          <Select value={date} onValueChange={(v) => v && setDate(v)}>
+            <SelectTrigger className="w-[260px]"><SelectValue placeholder="Pick a sale" /></SelectTrigger>
+            <SelectContent>
+              {(sales || []).map((s) => (
+                <SelectItem key={s.date} value={s.date}>{s.day} {s.date} · {s.label} ({s.count})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {sale && <span className="text-xs text-muted-foreground">{sale.screened}/{sale.count} screened</span>}
         </div>
       </div>
 
@@ -74,15 +90,13 @@ export function Lane({ profile, onLoaded, onOpen }: {
               </tr>
             </thead>
             <tbody>
-              {(sale?.vehicles || []).map((v, i) => (
-                <tr key={v.contract}
-                  className="cursor-pointer border-t hover:bg-muted/40"
-                  onClick={() => onOpen(i)}>
+              {rows.map(({ v, i }) => (
+                <tr key={v.contract} className="cursor-pointer border-t hover:bg-muted/40" onClick={() => onOpen(i)}>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{v.lot || "—"}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
-                      {v.photo && <img src={v.photo} alt="" className="h-9 w-12 shrink-0 rounded object-cover"
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />}
+                      {v.photo && <img src={img(v.photo)} alt="" loading="lazy" className="h-9 w-12 shrink-0 rounded bg-muted object-cover"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden" }} />}
                       <div>
                         <div className="font-medium">{v.year} {v.make} {v.model}{v.trim ? ` ${v.trim}` : ""}</div>
                         <div className="font-mono text-[10px] text-muted-foreground">#{v.contract}</div>
@@ -94,7 +108,7 @@ export function Lane({ profile, onLoaded, onOpen }: {
                     {v.verdict ? (
                       <div className="flex items-center gap-1.5">
                         <Badge variant={verdictVariant(v.verdict)}>{VERDICT_LABEL[v.verdict] || v.verdict}</Badge>
-                        {v.deepReady && <span title="deep result ready" className="text-xs text-primary">deep ✓</span>}
+                        {v.deepReady && <span title="deep result ready" className="text-xs text-sky-500">deep ✓</span>}
                         {v.needsDeep && <span title={v.deepReason || "worth a deep run"} className="text-xs text-amber-500">⚑</span>}
                       </div>
                     ) : <span className="text-xs text-muted-foreground">not scored</span>}

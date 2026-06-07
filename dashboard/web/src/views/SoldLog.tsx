@@ -29,7 +29,7 @@ export function SoldLog() {
   async function del(id: number) { await api.deletePersonalSale(id); await load() }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
+    <div className="w-full px-4 py-6 lg:px-8">
       <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
         Your realized sales · {sales?.length ?? 0} on record
       </div>

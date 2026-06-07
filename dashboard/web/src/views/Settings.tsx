@@ -29,14 +29,14 @@ export function Settings() {
   }
 
   if (err && !s) return <div className="p-8 text-sm text-muted-foreground">{err}</div>
-  if (!s) return <div className="mx-auto max-w-4xl px-4 py-6"><Skeleton className="h-96 w-full" /></div>
+  if (!s) return <div className="w-full px-4 py-6 lg:px-8"><Skeleton className="h-96 w-full" /></div>
 
   const order: string[] = s.profile_order?.length ? s.profile_order : Object.keys(s.profiles || {})
   const locs: any[] = s.locations || []
   const eng = s.engine || {}
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6">
+    <div className="mx-auto max-w-5xl px-4 py-6 lg:px-8">
       <div className="mb-5 flex items-end justify-between">
         <div><div className="text-xs uppercase tracking-wide text-muted-foreground">Applies to every evaluation</div>
           <h1 className="font-heading text-3xl font-semibold">Settings</h1></div>
