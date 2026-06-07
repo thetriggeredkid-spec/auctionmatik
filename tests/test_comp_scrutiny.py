@@ -3,6 +3,44 @@
 from engine import comp_scrutiny as CS
 
 
+def test_dedupe_reposts_collapses_same_vehicle():
+    # a dealer reposting the same truck 4× (different photos) → one comp, not four
+    base = {
+        "year": 2019,
+        "make": "FORD",
+        "model": "F-150",
+        "trim": "XLT",
+        "odometer_km": 100_000,
+        "asking_price": 3_000_000,
+    }
+    comps = [
+        {**base, "external_id": "a"},
+        {**base, "external_id": "b", "main_photo_url": "http://x/p.jpg"},
+        {**base, "external_id": "c"},
+        {**base, "external_id": "d"},
+        # a genuinely different unit stays
+        {
+            "year": 2019,
+            "make": "FORD",
+            "model": "F-150",
+            "trim": "XLT",
+            "odometer_km": 60_000,
+            "asking_price": 3_400_000,
+            "external_id": "e",
+        },
+    ]
+    deduped, merged = CS._dedupe_reposts(comps)
+    assert merged == 3 and len(deduped) == 2
+    # the surviving repost is the one that had a photo
+    survivor = next(c for c in deduped if c["odometer_km"] == 100_000)
+    assert survivor["main_photo_url"] == "http://x/p.jpg"
+    # and scrutinize notes the merge
+    res = CS.scrutinize(
+        {"year": 2019, "make": "FORD", "model": "F-150", "odometer_km": 90_000}, comps
+    )
+    assert any("duplicate repost" in n for n in res["narrative"])
+
+
 def test_vision_condition_levels():
     assert (
         CS._vision_condition({"vision": {"flood_or_frame_concern": True}}) == "damaged"

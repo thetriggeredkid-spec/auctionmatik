@@ -1865,8 +1865,16 @@ def _to_design(
         top_flags = _topflags(decl)
 
     margin = _margin(ADV_PROFILES[profile], value)
-    buyer_fee, gst = _fee_gst(max_bid)  # exact, settings-aware — so the waterfall can
-    # show auction fee + GST as their own bars instead of one lumped "fees" step.
+    # Fee/tax must follow the PURCHASE CONTEXT (advisor already decided it): auction → Regal
+    # buyer fee + GST; private/dealer (off-auction, the Appraise tab) → NO auction fee, tax at
+    # the jurisdiction rate. (Previously _fee_gst was applied unconditionally, so off-auction
+    # appraisals wrongly showed an auction fee.)
+    ctx = prof_advice.get("context") or {}
+    if ctx.get("auction_fee", True):
+        buyer_fee, gst = _fee_gst(max_bid)  # auction: settings-aware Regal fee + GST
+    else:
+        buyer_fee = 0
+        gst = round((max_bid or 0) * ctx.get("tax_rate", 0.0))
     rules = {
         "charles": {
             "verdict": _norm_verdict(ch["verdict"]),

@@ -299,8 +299,43 @@ def _median(vals):
     return (ordered[n // 2 - 1] + ordered[n // 2]) // 2
 
 
+def _dedupe_reposts(comps: list[dict]) -> tuple[list[dict], int]:
+    """Collapse the SAME vehicle reposted as multiple ads (a dealer posting different photo
+    angles under separate listings — same year/make/model/trim/km/price). Counting each as a
+    distinct comp fakes confidence and skews the anchor (e.g. contract 33704: 4 ads, 1 car).
+    Keeps one per identity (preferring a row that has a photo). Returns (deduped, merged_count).
+    """
+    seen: dict = {}
+    out = []
+    for c in comps:
+        key = (
+            c.get("year"),
+            (c.get("make") or "").upper(),
+            (c.get("model") or "").upper(),
+            (c.get("trim") or "").strip().upper(),
+            c.get("odometer_km"),
+            c.get("asking_price"),
+        )
+        # Don't merge on an all-empty identity (missing km AND price → can't tell they're the same).
+        if not (key[4] and key[5]):
+            out.append(c)
+            continue
+        if key not in seen:
+            seen[key] = len(out)
+            out.append(c)
+        elif not out[seen[key]].get("main_photo_url") and c.get("main_photo_url"):
+            out[seen[key]] = c  # keep the copy that has a photo
+    return out, len(comps) - len(out)
+
+
 def scrutinize(subject: dict, comps: list[dict], top_n: int = 6) -> dict:
     clean, excluded, narrative = [], [], []
+
+    comps, _merged = _dedupe_reposts(comps)
+    if _merged:
+        narrative.append(
+            f"merged {_merged} duplicate repost(s) of the same vehicle (counted once)"
+        )
 
     # 1. Reason about each comp: estimate its likely sale price (asking minus a
     #    days-on-market discount) and score its comparability. Rebuilt/salvage
