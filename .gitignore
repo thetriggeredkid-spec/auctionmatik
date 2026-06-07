@@ -16,3 +16,8 @@ data/carfax/
 
 # Personal Claude Code settings (permissions); keep settings.json shared
 .claude/settings.local.json
+
+# Vite/shadcn dashboard build
+dashboard/web/node_modules/
+dashboard/web/dist/
+dashboard/web/.vite/
