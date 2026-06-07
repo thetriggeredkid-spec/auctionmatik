@@ -9,27 +9,40 @@ import { Label } from "@/components/ui/label"
 
 const muted = "text-sm text-muted-foreground"
 
-// ── Max-bid waterfall ─────────────────────────────────────────────────────────
+// ── Max-bid waterfall — a stacked bar showing how the sale value splits into your
+//    max bid + the costs (margin, fee, tax) that come off it. ──────────────────
 export function Waterfall({ v }: { v: Vehicle }) {
   const value = v.value || 0
-  const steps = [
-    { label: v.valueBasis || "value", amt: value, kind: "base" as const },
-    { label: "margin", amt: -(v.margin || 0), kind: "sub" as const },
-    ...(v.buyerFee ? [{ label: "auction fee", amt: -(v.buyerFee || 0), kind: "sub" as const }] : []),
-    ...(v.gst ? [{ label: "tax/GST", amt: -(v.gst || 0), kind: "sub" as const }] : []),
-    { label: v.source ? "max buy" : "max bid", amt: v.maxBid || 0, kind: "total" as const },
+  const segs = [
+    { label: v.source ? "max buy" : "max bid", amt: v.maxBid || 0, color: "bg-primary", text: "text-primary" },
+    { label: "margin", amt: v.margin || 0, color: "bg-amber-500", text: "text-amber-500" },
+    ...(v.buyerFee ? [{ label: "auction fee", amt: v.buyerFee || 0, color: "bg-orange-500", text: "text-orange-500" }] : []),
+    ...(v.gst ? [{ label: "tax/GST", amt: v.gst || 0, color: "bg-rose-500", text: "text-rose-500" }] : []),
   ]
+  const total = Math.max(value, segs.reduce((s, x) => s + x.amt, 0)) || 1
   return (
-    <div className="space-y-1.5">
-      {steps.map((s, i) => (
-        <div key={i} className="flex items-center justify-between text-sm">
-          <span className={s.kind === "total" ? "font-medium" : muted}>{s.label}</span>
-          <span className={`tabular-nums ${s.kind === "sub" ? "text-destructive" : s.kind === "total" ? "font-semibold" : ""}`}>
-            {s.kind === "sub" ? "−" + fmt(Math.abs(s.amt)) : fmt(s.amt)}
-          </span>
-        </div>
-      ))}
-      {v.divergence && <p className="pt-2 text-xs text-muted-foreground">{v.divergence}</p>}
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <span className={`text-xs uppercase ${muted}`}>{v.valueBasis || "sale value"}</span>
+        <span className="font-heading text-lg font-semibold tabular-nums">{fmt(value)}</span>
+      </div>
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
+        {segs.map((s, i) => (
+          <div key={i} className={s.color} style={{ width: `${(s.amt / total) * 100}%` }} title={`${s.label} ${fmt(s.amt)}`} />
+        ))}
+      </div>
+      <div className="space-y-1.5">
+        {segs.map((s, i) => (
+          <div key={i} className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-2">
+              <span className={`inline-block h-2.5 w-2.5 rounded-sm ${s.color}`} />
+              <span className={i === 0 ? "font-medium" : muted}>{s.label}</span>
+            </span>
+            <span className={`tabular-nums ${i === 0 ? "font-semibold" : muted}`}>{fmt(s.amt)}</span>
+          </div>
+        ))}
+      </div>
+      {v.divergence && <p className="border-t pt-2 text-xs text-muted-foreground">{v.divergence}</p>}
     </div>
   )
 }
@@ -56,11 +69,17 @@ export function CompsPanel({ v, onChange }: { v: Vehicle; onChange: () => void }
           <tbody>{(c.used || []).map((cm: any, i: number) => (
             <tr key={i} className="border-t">
               <td className="px-2 py-1.5">
-                {cm.url ? <a className="text-primary hover:underline" href={cm.url} target="_blank" rel="noopener">{cm.y} {cm.mk} {cm.md}{cm.trim ? " " + cm.trim : ""} ↗</a>
-                  : <span>{cm.y} {cm.mk} {cm.md}</span>}
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  {cm.realized && <Badge variant="default" className="px-1 py-0 text-[9px]">SOLD</Badge>}
-                  <span>{cm.src}</span>
+                <div className="flex items-center gap-2">
+                  {cm.photo && <img src={cm.photo} alt="" className="h-9 w-12 shrink-0 rounded object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />}
+                  <div className="min-w-0">
+                    {cm.url ? <a className="text-primary hover:underline" href={cm.url} target="_blank" rel="noopener">{cm.y} {cm.mk} {cm.md}{cm.trim ? " " + cm.trim : ""} ↗</a>
+                      : <span>{cm.y} {cm.mk} {cm.md}</span>}
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      {cm.realized && <Badge variant="default" className="px-1 py-0 text-[9px]">SOLD</Badge>}
+                      <span>{cm.src}</span>
+                    </div>
+                  </div>
                 </div>
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{cm.km ? (cm.km / 1000).toFixed(0) + "k" : "—"}</td>
@@ -112,9 +131,10 @@ export function PastSalesPanel({ v }: { v: Vehicle }) {
 }
 
 // ── Vision ────────────────────────────────────────────────────────────────────
-export function VisionPanel({ v, profile, onUpdate }: { v: Vehicle; profile: string; onUpdate: (v: Vehicle) => void }) {
+export function VisionPanel({ v, profile, photos, onUpdate }: { v: Vehicle; profile: string; photos?: string[]; onUpdate: (v: Vehicle) => void }) {
   const [busy, setBusy] = useState(false)
   const va = v.vision
+  const pics = photos || v.photos || (v.photo ? [v.photo] : [])
   async function run() {
     if (!v.contract) return
     setBusy(true)
@@ -122,8 +142,19 @@ export function VisionPanel({ v, profile, onUpdate }: { v: Vehicle; profile: str
   }
   return (
     <div className="space-y-3">
-      {v.contract && <Button size="sm" variant="secondary" onClick={run} disabled={busy}>{busy ? "Reading photos…" : va ? "Re-run vision" : "Run vision"}</Button>}
-      {!va ? <p className={muted}>No vision assessment yet.</p> : (
+      <div className="flex items-center gap-3">
+        {v.contract && <Button size="sm" variant="secondary" onClick={run} disabled={busy}>{busy ? "Reading photos…" : va ? "Re-run vision" : "Run vision"}</Button>}
+        {!va && <span className={muted}>Vision runs on a deep appraisal (or click Run vision).</span>}
+      </div>
+      {pics.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {pics.slice(0, 12).map((p, i) => (
+            <img key={i} src={p} alt="" className="h-24 shrink-0 rounded-md border object-cover"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
+          ))}
+        </div>
+      )}
+      {!va ? null : (
         <>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <span>ext <b>{va.extGrade}/5</b></span><span>int <b>{va.intGrade}/5</b></span>

@@ -6,7 +6,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 
-export function Lane({ profile, onOpen }: { profile: string; onOpen: (v: Vehicle) => void }) {
+export function Lane({ profile, onLoaded, onOpen }: {
+  profile: string
+  onLoaded: (vehicles: Vehicle[]) => void
+  onOpen: (index: number) => void
+}) {
   const [sales, setSales] = useState<Sale[] | null>(null)
   const [date, setDate] = useState<string>("")
   const [sale, setSale] = useState<SaleData | null>(null)
@@ -23,7 +27,10 @@ export function Lane({ profile, onOpen }: { profile: string; onOpen: (v: Vehicle
   useEffect(() => {
     if (!date) return
     setLoading(true); setSale(null); setErr(null)
-    api.sale(date, profile).then(setSale).catch((e) => setErr(String(e))).finally(() => setLoading(false))
+    api.sale(date, profile)
+      .then((s) => { setSale(s); onLoaded(s.vehicles || []) })
+      .catch((e) => setErr(String(e)))
+      .finally(() => setLoading(false))
   }, [date, profile])
 
   if (err) return <div className="p-8 text-sm text-muted-foreground">{err}</div>
@@ -67,10 +74,10 @@ export function Lane({ profile, onOpen }: { profile: string; onOpen: (v: Vehicle
               </tr>
             </thead>
             <tbody>
-              {(sale?.vehicles || []).map((v) => (
+              {(sale?.vehicles || []).map((v, i) => (
                 <tr key={v.contract}
                   className="cursor-pointer border-t hover:bg-muted/40"
-                  onClick={() => onOpen(v)}>
+                  onClick={() => onOpen(i)}>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{v.lot || "—"}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
@@ -95,7 +102,7 @@ export function Lane({ profile, onOpen }: { profile: string; onOpen: (v: Vehicle
                   <td className="px-3 py-2 text-right tabular-nums">{fmt(v.value)}</td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums">{fmt(v.maxBid)}</td>
                   <td className="px-3 py-2 text-right">
-                    <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onOpen(v) }}>Open →</Button>
+                    <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onOpen(i) }}>Open →</Button>
                   </td>
                 </tr>
               ))}

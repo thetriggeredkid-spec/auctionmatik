@@ -10,7 +10,7 @@ const VIEWS: { id: ViewName; label: string }[] = [
 ]
 
 export function Nav({
-  view, setView, mode, setMode, profile, setProfile,
+  view, setView, mode, setMode, profile, setProfile, theme, toggleTheme,
 }: {
   view: ViewName
   setView: (v: ViewName) => void
@@ -18,40 +18,41 @@ export function Nav({
   setMode: (m: Mode) => void
   profile: string
   setProfile: (p: string) => void
+  theme: "dark" | "light"
+  toggleTheme: () => void
 }) {
   return (
     <header className="sticky top-0 z-20 border-b bg-background/80 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
         <span className="font-heading text-lg font-semibold tracking-tight">Auctionmatik</span>
-        <nav className="ml-4 flex items-center gap-1">
+        <nav className="ml-2 flex items-center gap-1">
           {VIEWS.map((v) => (
-            <Button
-              key={v.id}
-              size="sm"
-              variant={view === v.id ? "secondary" : "ghost"}
-              onClick={() => setView(v.id)}
-            >
+            <Button key={v.id} size="sm" variant={view === v.id ? "secondary" : "ghost"} onClick={() => setView(v.id)}>
               {v.label}
             </Button>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex rounded-md border p-0.5">
-            {(["triage", "deep"] as Mode[]).map((m) => (
-              <Button key={m} size="sm" variant={mode === m ? "secondary" : "ghost"}
-                className="h-7 px-2 text-xs" onClick={() => setMode(m)}>
-                {m}
-              </Button>
-            ))}
+        <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-1.5" title="Appraisal depth for opening a vehicle / the Run button">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">mode</span>
+            <div className="flex rounded-md border p-0.5">
+              {(["triage", "deep"] as Mode[]).map((m) => (
+                <Button key={m} size="sm" variant={mode === m ? "default" : "ghost"}
+                  className="h-7 px-2.5 text-xs capitalize" onClick={() => setMode(m)}>
+                  {m}
+                </Button>
+              ))}
+            </div>
           </div>
-          <select
-            value={profile}
-            onChange={(e) => setProfile(e.target.value)}
-            className="h-8 rounded-md border bg-background px-2 text-xs"
-          >
+          <select value={profile} onChange={(e) => setProfile(e.target.value)}
+            className="h-8 rounded-md border bg-background px-2 text-xs">
             <option value="charles">charles</option>
             <option value="mechanic">mechanic</option>
           </select>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={toggleTheme}
+            title={theme === "dark" ? "Switch to light" : "Switch to dark"}>
+            {theme === "dark" ? "☀" : "☾"}
+          </Button>
         </div>
       </div>
     </header>
