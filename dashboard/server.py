@@ -96,6 +96,38 @@ _IMG_HOSTS = (
 _IMG_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"}
 
 
+_IMG_MAX_BYTES = 8 * 1024 * 1024  # 8 MiB cap on a proxied image
+
+
+def _resolves_public(host: str) -> bool:
+    """True only if EVERY DNS result for host is a global/public IP — rejects an allowlisted
+    domain that (via misconfig or DNS rebinding) points at a private/loopback/link-local/CGNAT
+    address. Defense-in-depth on top of the host allowlist."""
+    import socket
+    import ipaddress
+
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (
+            not ip.is_global
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_private
+            or ip.is_reserved
+        ):
+            return False
+    return True
+
+
 @app.get("/api/img")
 def api_img():
     """Proxy an external listing/comp image server-side (browser can't hotlink FB CDN)."""
@@ -111,19 +143,34 @@ def api_img():
         host == h or host.endswith("." + h) for h in _IMG_HOSTS
     ):
         return jsonify(error="disallowed url"), 400
+    if not _resolves_public(host):
+        return jsonify(error="disallowed host"), 400
     try:
-        # No redirects — a 30x could bounce to an internal host, re-opening the SSRF hole.
+        # No redirects (a 30x could bounce to an internal host); stream + cap the body so a
+        # huge/slow response can't exhaust memory.
         r = requests.get(
             url,
             timeout=12,
             allow_redirects=False,
+            stream=True,
             headers={"User-Agent": "Mozilla/5.0"},
         )
         ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        clen = r.headers.get("Content-Length")
         if r.status_code != 200 or ctype not in _IMG_TYPES:
+            r.close()
             return ("", 415 if ctype not in _IMG_TYPES else 404)
+        if clen and clen.isdigit() and int(clen) > _IMG_MAX_BYTES:
+            r.close()
+            return ("", 413)
+        buf = bytearray()
+        for chunk in r.iter_content(8192):
+            buf.extend(chunk)
+            if len(buf) > _IMG_MAX_BYTES:
+                r.close()
+                return ("", 413)
         return Response(
-            r.content,
+            bytes(buf),
             mimetype=ctype,
             headers={
                 "Cache-Control": "public, max-age=86400",
