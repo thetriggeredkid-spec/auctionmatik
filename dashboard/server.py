@@ -62,7 +62,14 @@ def index():
                 _INDEX_CACHE = f.read()
         from flask import Response
 
-        return Response(_INDEX_CACHE, mimetype="text/html")
+        # Never cache index.html — it points at hash-busted JS/CSS, so the browser must
+        # re-fetch it to pick up a new build (otherwise you're stuck on the old bundle until
+        # a hard refresh). The hashed assets themselves are immutable + cached by Flask static.
+        return Response(
+            _INDEX_CACHE,
+            mimetype="text/html",
+            headers={"Cache-Control": "no-store, must-revalidate"},
+        )
     except Exception:  # noqa: BLE001
         return send_from_directory(STATIC, "index.html")
 
