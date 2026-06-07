@@ -1,11 +1,12 @@
 """
 Auctionmatic dashboard server.
 
-Serves the hi-fi dashboard (recreated from the Claude Design handoff —
-"Auctionmatic Detail.html": The Lane + the Verdict Card) and wires it to the
-live engine.
+Serves the Vite + React + TypeScript + shadcn SPA (built to dashboard/web/dist;
+falls back to the legacy dashboard/static if dist is absent) and wires it to the
+live engine via the JSON /api.
 
     pip install -r requirements.txt
+    cd dashboard/web && npm run build    # build the SPA (first run / after UI changes)
     python3 -m dashboard.server          # http://127.0.0.1:8080
 
 Endpoints:
@@ -22,7 +23,16 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from db.connection import get_conn
 
-STATIC = os.path.join(os.path.dirname(__file__), "static")
+# Serve the built Vite + shadcn SPA (dashboard/web/dist) in production. If it hasn't
+# been built yet, fall back to the legacy buildless dashboard (dashboard/static) so the
+# server never comes up blank. Build the new UI with: cd dashboard/web && npm run build
+_WEB_DIST = os.path.join(os.path.dirname(__file__), "web", "dist")
+_LEGACY_STATIC = os.path.join(os.path.dirname(__file__), "static")
+STATIC = (
+    _WEB_DIST
+    if os.path.exists(os.path.join(_WEB_DIST, "index.html"))
+    else _LEGACY_STATIC
+)
 app = Flask(__name__, static_folder=STATIC, static_url_path="")
 
 # Apply saved settings (edited profiles / margins / fees / GST / toggles) at startup.

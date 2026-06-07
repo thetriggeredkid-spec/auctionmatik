@@ -81,16 +81,20 @@ engine/
   valuator.py · max_bid.py · factors/   # original deterministic factor engine (Phase 1)
 
 dashboard/
-  server.py           # Flask: serves the SPA + JSON API
+  server.py           # Flask: serves the built SPA (web/dist) + JSON API
   mapper.py           # engine output → the design's vehicle shape (the glue)
-  static/             # hi-fi React-over-Babel UI (recreated from Claude Design handoff)
-    index.html · data.js (sample) · hifi/{system.css,viz,panels,lane,app}.jsx
+  web/                # Vite + React + TS + Tailwind v4 + shadcn SPA (June 2026 redesign)
+    src/{App.tsx, lib/{api,types,format}.ts, components/, views/{Lane,Card,panels,Appraise,
+    SoldLog,Calibration,Settings}.tsx} · build: `npm run build` → web/dist (Flask serves it)
+  static/             # LEGACY buildless React-over-Babel UI — retained, unreferenced, pending removal
 
 evaluate.py           # CLI: python3 evaluate.py --contract 37316 [--ai --deep --auto]
 ```
 
 ## The dashboard
-Run: `source venv/bin/activate && python3 -m dashboard.server` → http://127.0.0.1:8080
+Build + run: `cd dashboard/web && npm install && npm run build` then
+`source venv/bin/activate && python3 -m dashboard.server` → http://127.0.0.1:8080
+(frontend dev with hot reload: `cd dashboard/web && npm run dev` → :5173, proxies /api → :8080)
 - **The Lane** — structured like Regal: one **sale** at a time (only upcoming **Tuesday Timed
   Auctions** + **Saturday Super Sales**), vehicles in **lot order**, screened deterministically.
 - **Verdict Card** — identity + photo gallery → verdict hero → max-bid derivation waterfall →

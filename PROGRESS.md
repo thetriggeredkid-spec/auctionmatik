@@ -10,6 +10,24 @@ reasoning, plus a human-in-the-loop training loop. Decent starting ground; calib
 
 ---
 
+## Dashboard re-platform → Vite + shadcn ✅ (June 2026)
+Migrated the buildless React-over-Babel dashboard (`dashboard/static/hifi/*.jsx` + `system.css`)
+to a real **Vite + React + TypeScript + Tailwind v4 + shadcn/ui** app in **`dashboard/web/`**
+(shadcn preset `b2vkByWveE` / base-rhea, dark theme).
+- **Foundation:** Vite react-ts, Tailwind v4 (`@tailwindcss/vite`), `@` alias, shadcn init + base
+  components; dev proxy `/api` → Flask :8080. `src/lib/{api,types,format}.ts` (typed client + SSE
+  helper + shapes).
+- **Views ported** (all 6): `Lane`, `Card` (+ full tabs: Comps w/ flag, Past sales, Vision w/ re-run,
+  Repair, Recon & sale, Declarations, Carfax w/ pull, Inputs w/ re-appraise, Correct) + max-bid
+  waterfall, `Appraise` (ad-URL ingest + VIN + vPIC selector → streamed deep appraisal), `SoldLog`,
+  `Calibration` (two-track), `Settings` (location/profiles/tiers/fees/GST/toggles).
+- **Cutover:** `server.py` serves `web/dist` when built, else falls back to legacy `static/`. `/api`
+  unchanged. Verified: `:8080` serves the shadcn build (hashed assets 200) + `/api` 200.
+- **Build:** `cd dashboard/web && npm run build`. Dev: `npm run dev` (:5173, proxies /api).
+- **Pending:** remove the legacy `dashboard/static/hifi/*` once the new UI is eyeballed in the browser.
+
+---
+
 ## Phase 1 — Deterministic foundation ✅
 - Postgres (Docker, **port 5433**); `regal_sold`, `regal_listings`, `valuations`.
 - Collectors: `regal_market.py` (sold), `regal_listings.py` (active, parses lot + sale_date).

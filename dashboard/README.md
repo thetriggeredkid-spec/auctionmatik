@@ -1,8 +1,30 @@
 # Auctionmatic Dashboard
 
-The hi-fi web dashboard for the valuation engine — recreated from the Claude
-Design handoff (**"Auctionmatic Detail.html"**: *The Lane* + the *Verdict Card*)
-and wired to the live engine.
+The web dashboard for the valuation engine, wired to the live Flask `/api`.
+
+> **Stack (June 2026 redesign):** migrated from the buildless React-over-Babel UI to a
+> **Vite + React + TypeScript + Tailwind v4 + shadcn/ui** app in `dashboard/web/`
+> (shadcn preset `b2vkByWveE` / base-rhea, dark). Views: **Lane**, **Verdict Card**
+> (+ all tabs), **✦ Appraise** (off-auction), **Sold log**, **Calibration**, **Settings**.
+> `server.py` serves the built `web/dist` in production (falling back to the legacy
+> `static/` only if `dist` is absent). The old `static/hifi/*.jsx` is retained but
+> unreferenced, pending removal.
+
+## Build + run
+
+```bash
+docker compose up -d                          # Postgres
+source venv/bin/activate && pip install -r requirements.txt
+cd dashboard/web && npm install && npm run build   # build the SPA → web/dist
+cd ../.. && python3 -m dashboard.server            # serves web/dist → http://127.0.0.1:8080
+```
+
+**Frontend dev (hot reload):** `cd dashboard/web && npm run dev` → http://localhost:5173
+(Vite proxies `/api` → Flask on :8080, so run `python3 -m dashboard.server` too).
+
+---
+
+## Original design notes
 
 > Industrial-instrument cockpit · themeable (light/dark) · Hanken Grotesk +
 > Spline Sans Mono. Two views: **The Lane** (screening table) and the **Verdict
