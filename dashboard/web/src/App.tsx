@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Nav } from "@/components/Nav"
 import { Lane } from "@/views/Lane"
 import { Card } from "@/views/Card"
+import { Appraise } from "@/views/Appraise"
 import { Toaster } from "@/components/ui/sonner"
 import type { Mode, Vehicle, ViewName } from "@/lib/types"
 
@@ -32,7 +33,7 @@ export default function App() {
       {view === "card" && (vehicle
         ? <Card vehicle={vehicle} mode={mode} profile={profile} onBack={() => setView("lane")} />
         : <Placeholder title="No vehicle selected" />)}
-      {view === "appraise" && <Placeholder title="✦ Appraise" />}
+      {view === "appraise" && <Appraise mode={mode} profile={profile} />}
       {view === "sold" && <Placeholder title="Sold log" />}
       {view === "calib" && <Placeholder title="Calibration" />}
       {view === "settings" && <Placeholder title="Settings" />}
